@@ -1,0 +1,332 @@
+# Backup and Recovery Automation Scripts
+# Scripts for automated backup and recovery operations
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-recovery-scripts
+  namespace: todo-app
+data:
+  backup.sh: |
+    #!/bin/bash
+    # Automated backup script for Todo AI system
+    
+    set -e
+    
+    # Configuration
+    NAMESPACE="todo-app"
+    BACKUP_DIR="/backup"
+    DATE=$(date +%Y%m%d_%H%M%S)
+    BACKUP_NAME="todo-app-backup-$DATE"
+    RETENTION_DAYS=30
+    
+    # Logging function
+    log() {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
+    }
+    
+    log "Starting backup: $BACKUP_NAME"
+    
+    # Create backup directory
+    mkdir -p "$BACKUP_DIR/$BACKUP_NAME"
+    
+    # Backup Kubernetes resources
+    log "Backing up Kubernetes resources..."
+    kubectl get all -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/resources.yaml"
+    kubectl get secrets -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/secrets.yaml"
+    kubectl get configmaps -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/configmaps.yaml"
+    kubectl get pv,pvc -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/volumes.yaml"
+    
+    # Backup persistent data (this would typically be handled by a storage solution)
+    log "Creating persistent volume snapshots..."
+    # Example for PVC backup using velero
+    if command -v velero &> /dev/null; then
+        velero backup create "$BACKUP_NAME" --include-namespaces "$NAMESPACE" --wait
+        log "Velero backup completed"
+    else
+        log "Velero not found, skipping volume backup"
+    fi
+    
+    # Backup application data (if applicable)
+    log "Backing up application data..."
+    # This would be specific to the application's data storage
+    # For example, if using a database:
+    # kubectl exec -n "$NAMESPACE" <database-pod> -- pg_dump <database-name> > "$BACKUP_DIR/$BACKUP_NAME/database.sql"
+    
+    # Create archive
+    log "Creating backup archive..."
+    tar -czf "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" -C "$BACKUP_DIR" "$BACKUP_NAME"
+    
+    # Clean up temporary directory
+    rm -rf "$BACKUP_DIR/$BACKUP_NAME"
+    
+    # Cleanup old backups
+    log "Cleaning up old backups..."
+    find "$BACKUP_DIR" -name "todo-app-backup-*.tar.gz" -mtime +$RETENTION_DAYS -delete
+    
+    log "Backup completed: ${BACKUP_NAME}.tar.gz"
+    
+    # Optional: Upload to external storage
+    # aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" s3://todo-app-backups/
+    # gsutil cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" gs://todo-app-backups/
+    # oci os object put --file "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" --bucket-name todo-app-backups --namespace todoappns --name "${BACKUP_NAME}.tar.gz"
+    
+    log "Backup process finished"
+  recovery.sh: |
+    #!/bin/bash
+    # Automated recovery script for Todo AI system
+    
+    set -e
+    
+    # Configuration
+    NAMESPACE="todo-app"
+    BACKUP_DIR="/backup"
+    BACKUP_FILE=""
+    
+    # Logging function
+    log() {
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
+    }
+    
+    # Function to display usage
+    usage() {
+        echo "Usage: $0 -f <backup-file> [-n <namespace>] [-s] [-h]"
+        echo "  -f <backup-file> : Path to the backup file to restore"
+        echo "  -n <namespace>   : Namespace to restore to (default: $NAMESPACE)"
+        echo "  -s               : Skip confirmation prompt"
+        echo "  -h               : Show this help message"
+        exit 1
+    }
+    
+    # Parse command line options
+    SKIP_CONFIRMATION=false
+    while getopts "f:n:sh" opt; do
+        case $opt in
+            f) BACKUP_FILE="$OPTARG" ;;
+            n) NAMESPACE="$OPTARG" ;;
+            s) SKIP_CONFIRMATION=true ;;
+            h) usage ;;
+            *) usage ;;
+        esac
+    done
+    
+    # Validate inputs
+    if [ -z "$BACKUP_FILE" ]; then
+        log "Error: Backup file not specified"
+        usage
+    fi
+    
+    if [ ! -f "$BACKUP_FILE" ]; then
+        log "Error: Backup file does not exist: $BACKUP_FILE"
+        exit 1
+    fi
+    
+    # Confirmation prompt unless skipped
+    if [ "$SKIP_CONFIRMATION" = false ]; then
+        read -p "This will restore from $BACKUP_FILE to namespace $NAMESPACE. Are you sure? (yes/no): " -r
+        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            log "Restore cancelled"
+            exit 0
+        fi
+    fi
+    
+    log "Starting recovery from: $BACKUP_FILE"
+    
+    # Extract backup
+    TEMP_DIR=$(mktemp -d)
+    tar -xzf "$BACKUP_FILE" -C "$TEMP_DIR"
+    
+    # Get backup directory name
+    BACKUP_SUBDIR=$(ls -1 "$TEMP_DIR" | head -n 1)
+    BACKUP_PATH="$TEMP_DIR/$BACKUP_SUBDIR"
+    
+    # Validate backup contents
+    if [ ! -f "$BACKUP_PATH/resources.yaml" ]; then
+        log "Error: Invalid backup format - resources.yaml not found"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+    
+    # Scale down existing deployment to prevent conflicts
+    log "Scaling down existing deployment..."
+    kubectl scale deployment -n "$NAMESPACE" --all --replicas=0 || true
+    
+    # Apply recovered resources
+    log "Restoring Kubernetes resources..."
+    kubectl apply -n "$NAMESPACE" -f "$BACKUP_PATH/resources.yaml" || true
+    kubectl apply -n "$NAMESPACE" -f "$BACKUP_PATH/configmaps.yaml" || true
+    kubectl apply -n "$NAMESPACE" -f "$BACKUP_PATH/secrets.yaml" || true
+    
+    # Restore persistent data (this would typically be handled by a storage solution)
+    log "Restoring persistent data..."
+    # Example for PVC recovery using velero
+    if command -v velero &> /dev/null; then
+        # Find the backup name from the file
+        BACKUP_NAME=$(basename "$BACKUP_FILE" .tar.gz)
+        if velero backup get "$BACKUP_NAME" &> /dev/null; then
+            log "Found Velero backup: $BACKUP_NAME"
+            velero restore create --from-backup "$BACKUP_NAME" --wait
+            log "Velero restore completed"
+        else
+            log "Velero backup not found: $BACKUP_NAME"
+        fi
+    else
+        log "Velero not found, skipping volume recovery"
+    fi
+    
+    # Restore application data (if applicable)
+    log "Restoring application data..."
+    # This would be specific to the application's data storage
+    # For example, if using a database:
+    # if [ -f "$BACKUP_PATH/database.sql" ]; then
+    #     kubectl exec -n "$NAMESPACE" <database-pod> -- psql <database-name> < "$BACKUP_PATH/database.sql"
+    # fi
+    
+    # Clean up
+    rm -rf "$TEMP_DIR"
+    
+    log "Recovery completed from: $BACKUP_FILE"
+    
+    # Verify deployment
+    log "Verifying deployment..."
+    kubectl rollout status deployment -n "$NAMESPACE" --timeout=300s
+    
+    log "Recovery process finished"
+  backup-cronjob.yaml: |
+    # CronJob for automated backups
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: todo-app-daily-backup
+      namespace: todo-app
+    spec:
+      schedule: "0 2 * * *"
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: backup-sa
+              containers:
+              - name: backup
+                image: bitnami/kubectl:latest
+                command:
+                - /bin/bash
+                - -c
+                - |
+                  # Install backup script
+                  cat << 'EOF' > /tmp/backup.sh
+                  #!/bin/bash
+                  # Configuration
+                  NAMESPACE="todo-app"
+                  BACKUP_DIR="/backup"
+                  DATE=$(date +%Y%m%d_%H%M%S)
+                  BACKUP_NAME="todo-app-backup-$DATE"
+                  RETENTION_DAYS=30
+                  
+                  # Logging function
+                  log() {
+                      echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
+                  }
+                  
+                  log "Starting backup: $BACKUP_NAME"
+                  
+                  # Create backup directory
+                  mkdir -p "$BACKUP_DIR/$BACKUP_NAME"
+                  
+                  # Backup Kubernetes resources
+                  log "Backing up Kubernetes resources..."
+                  kubectl get all -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/resources.yaml"
+                  kubectl get secrets -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/secrets.yaml"
+                  kubectl get configmaps -n "$NAMESPACE" -o yaml > "$BACKUP_DIR/$BACKUP_NAME/configmaps.yaml"
+                  
+                  # Create archive
+                  log "Creating backup archive..."
+                  tar -czf "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" -C "$BACKUP_DIR" "$BACKUP_NAME"
+                  
+                  # Clean up temporary directory
+                  rm -rf "$BACKUP_DIR/$BACKUP_NAME"
+                  
+                  # Cleanup old backups
+                  log "Cleaning up old backups..."
+                  find "$BACKUP_DIR" -name "todo-app-backup-*.tar.gz" -mtime +$RETENTION_DAYS -delete
+                  
+                  log "Backup completed: ${BACKUP_NAME}.tar.gz"
+                  
+                  # Optional: Upload to external storage
+                  # aws s3 cp "$BACKUP_DIR/${BACKUP_NAME}.tar.gz" s3://todo-app-backups/
+                  
+                  log "Backup process finished"
+                  EOF
+                  
+                  chmod +x /tmp/backup.sh
+                  /tmp/backup.sh
+                volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup
+                env:
+                - name: KUBECONFIG
+                  value: /var/run/secrets/kubernetes.io/serviceaccount/kubeconfig
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              volumes:
+              - name: backup-storage
+                persistentVolumeClaim:
+                  claimName: backup-pvc
+              restartPolicy: OnFailure
+  backup-pvc.yaml: |
+    # PersistentVolumeClaim for backup storage
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: backup-pvc
+      namespace: todo-app
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+      storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup-sa
+  namespace: todo-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/exec", "pods/log", "configmaps", "secrets", "persistentvolumeclaims", "persistentvolumes", "services", "deployments", "replicasets", "replicationcontrollers"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["velero.io"]
+  resources: ["backups", "restores", "schedules"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: backup-sa
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: backup-role
+  apiGroup: rbac.authorization.k8s.io

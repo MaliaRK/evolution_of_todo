@@ -52,37 +52,37 @@ class ApiClient {
     }
   }
 
-  // Task-related methods
+  // Todo-related methods (using new event-driven endpoints)
   getTasks() {
-    return this.request('/api/v1/tasks');
+    return this.request('/api/v1/todos');
   }
 
   createTask(taskData) {
-    return this.request('/api/v1/tasks', {
+    return this.request('/api/v1/todos', {
       method: 'POST',
       body: JSON.stringify(taskData),
     });
   }
 
   getTaskById(id) {
-    return this.request(`/api/v1/tasks/${id}`);
+    return this.request(`/api/v1/todos/${id}`);
   }
 
   updateTask(id, taskData) {
-    return this.request(`/api/v1/tasks/${id}`, {
+    return this.request(`/api/v1/todos/${id}`, {
       method: 'PUT',
       body: JSON.stringify(taskData),
     });
   }
 
   deleteTask(id) {
-    return this.request(`/api/v1/tasks/${id}`, {
+    return this.request(`/api/v1/todos/${id}`, {
       method: 'DELETE',
     });
   }
 
   toggleTaskCompletion(id) {
-    return this.request(`/api/v1/tasks/${id}/toggle-completion`, {
+    return this.request(`/api/v1/todos/${id}/complete`, {
       method: 'PATCH',
     });
   }

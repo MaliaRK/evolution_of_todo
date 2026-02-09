@@ -1,0 +1,1130 @@
+# Comprehensive Logging and Monitoring Configuration
+# Configuration for comprehensive logging and monitoring in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: comprehensive-logging-monitoring
+  namespace: todo-app
+data:
+  logging-configuration.yaml: |
+    # Comprehensive logging configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: logging-configuration
+      namespace: logging
+    data:
+      fluent-bit-config.conf: |
+        [SERVICE]
+            Flush         1
+            Log_Level     info
+            Daemon        off
+            Parsers_File  parsers.conf
+            HTTP_Server   On
+            HTTP_Listen   0.0.0.0
+            HTTP_Port     2020
+        
+        @INCLUDE input-kubernetes.conf
+        @INCLUDE filter-kubernetes.conf
+        @INCLUDE output-elasticsearch.conf
+        
+        [INPUT]
+            Name              tail
+            Path              /var/log/containers/*.log
+            Parser            docker
+            Tag               kube.*
+            Refresh_Interval  5
+            Skip_Long_Lines   On
+            DB                /var/log/flb_kube.db
+            Mem_Buf_Limit     50MB
+            Buffer_Chunk_Size 1M
+            Buffer_Max_Size   5M
+        
+        [INPUT]
+            Name              systemd
+            Tag               systemd.*
+            Systemd_Filter    _SYSTEMD_UNIT=todo-app.service
+            Read_From_Tail    On
+        
+        [FILTER]
+            Name                kubernetes
+            Match               kube.*
+            Kube_URL            https://kubernetes.default.svc:443
+            Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+            Kube_Tag_Prefix     kube.var.log.containers.
+            Merge_Log           On
+            Merge_Log_Key       log_processed
+            K8S-Logging.Parser  On
+            K8S-Logging.Exclude Off
+        
+        [FILTER]
+            Name                nest
+            Match               kube.*
+            Operation           lift
+            Nested_Under        kubernetes
+            Add_Prefix          k8s_
+        
+        [FILTER]
+            Name                modify
+            Match               *
+            Copy                k8s_container_name container_name
+            Copy                k8s_namespace_name namespace
+            Copy                k8s_pod_name       pod_name
+            Remove_regex        ^k8s_.*
+        
+        [OUTPUT]
+            Name            es
+            Match           *
+            Host            elasticsearch
+            Port            9200
+            Index           logs-${ENVIRONMENT}-${DATE:-%Y.%m.%d}
+            Logstash_Format On
+            Logstash_Prefix logs-${ENVIRONMENT}
+            Replace_Dots    On
+            Retry_Limit     False
+        
+        [OUTPUT]
+            Name            forward
+            Match           *
+            Host            loki
+            Port            24224
+            Retry_Limit     False
+            Labels          cluster=todo-app,environment=${ENVIRONMENT}
+        
+        [OUTPUT]
+            Name            http
+            Match           *
+            Host            monitoring-service
+            Port            8080
+            URI             /logs
+            Format          json
+            Retry_Limit     False
+      structured-logging-config.yaml: |
+        # Configuration for structured logging
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: structured-logging-config
+          namespace: todo-app
+        data:
+          logging-config.json: |
+            {
+              "logging": {
+                "level": "INFO",
+                "format": "json",
+                "timestampFormat": "ISO8601",
+                "output": {
+                  "console": {
+                    "enabled": true,
+                    "color": false
+                  },
+                  "file": {
+                    "enabled": true,
+                    "path": "/app/logs/application.log",
+                    "maxSize": "100MB",
+                    "maxFiles": 10,
+                    "compress": true
+                  },
+                  "remote": {
+                    "enabled": true,
+                    "endpoint": "http://fluent-bit.logging.svc.cluster.local:24224",
+                    "format": "json"
+                  }
+                },
+                "fields": {
+                  "service": "todo-app",
+                  "version": "${APP_VERSION}",
+                  "environment": "${ENVIRONMENT}",
+                  "region": "${REGION}",
+                  "instanceId": "${INSTANCE_ID}"
+                },
+                "masking": {
+                  "enabled": true,
+                  "patterns": [
+                    "password",
+                    "secret",
+                    "token",
+                    "key",
+                    "credential",
+                    "auth"
+                  ]
+                },
+                "sampling": {
+                  "enabled": true,
+                  "rate": 1.0,
+                  "rules": [
+                    {
+                      "level": "ERROR",
+                      "rate": 1.0
+                    },
+                    {
+                      "level": "WARN",
+                      "rate": 0.5
+                    }
+                  ]
+                }
+              }
+            }
+          correlation-id-config.yaml: |
+            # Configuration for correlation ID propagation
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: correlation-id-config
+              namespace: todo-app
+            data:
+              correlation-config.json: |
+                {
+                  "correlationId": {
+                    "enabled": true,
+                    "headerName": "X-Correlation-ID",
+                    "generator": "uuid-v4",
+                    "propagation": {
+                      "http": {
+                        "enabled": true,
+                        "headerName": "X-Correlation-ID"
+                      },
+                      "grpc": {
+                        "enabled": true,
+                        "headerName": "x-correlation-id"
+                      },
+                      "messaging": {
+                        "enabled": true,
+                        "headerName": "correlation-id"
+                      }
+                    },
+                    "validation": {
+                      "enabled": true,
+                      "pattern": "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$",
+                      "maxLength": 36
+                    }
+                  }
+                }
+      log-rotation-config.yaml: |
+        # Log rotation configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: log-rotation-config
+          namespace: logging
+        data:
+          logrotate.conf: |
+            /var/log/containers/todo-app*.log {
+                rotate 7
+                daily
+                compress
+                delaycompress
+                copytruncate
+                missingok
+                notifempty
+                size 100M
+                postrotate
+                    # Reload Fluent Bit configuration
+                    kill -USR1 `cat /var/log/fluent-bit.pid` 2>/dev/null || true
+                endscript
+            }
+            
+            /var/log/pods/todo-app*.log {
+                rotate 7
+                daily
+                compress
+                delaycompress
+                copytruncate
+                missingok
+                notifempty
+                size 100M
+            }
+  monitoring-configuration.yaml: |
+    # Comprehensive monitoring configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: monitoring-configuration
+      namespace: monitoring
+    data:
+      prometheus-config.yaml: |
+        # Prometheus configuration
+        global:
+          scrape_interval: 15s
+          scrape_timeout: 10s
+          evaluation_interval: 15s
+        
+        rule_files:
+          - "alert_rules.yml"
+          - "record_rules.yml"
+        
+        alerting:
+          alertmanagers:
+            - static_configs:
+                - targets:
+                  - alertmanager:9093
+        
+        scrape_configs:
+          # Monitor the Todo App services
+          - job_name: 'todo-app'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - 'todo-app'
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                action: replace
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+                target_label: __address__
+              - action: labelmap
+                regex: __meta_kubernetes_pod_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: kubernetes_namespace
+              - source_labels: [__meta_kubernetes_pod_name]
+                action: replace
+                target_label: kubernetes_pod_name
+              - source_labels: [__meta_kubernetes_pod_container_name]
+                action: replace
+                target_label: container_name
+          
+          # Monitor Dapr services
+          - job_name: 'dapr'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - 'dapr-system'
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                action: replace
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+                target_label: __address__
+              - action: labelmap
+                regex: __meta_kubernetes_pod_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: kubernetes_namespace
+              - source_labels: [__meta_kubernetes_pod_name]
+                action: replace
+                target_label: kubernetes_pod_name
+          
+          # Monitor Kafka
+          - job_name: 'kafka'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - 'kafka'
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                action: replace
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+                target_label: __address__
+              - action: labelmap
+                regex: __meta_kubernetes_pod_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: kubernetes_namespace
+              - source_labels: [__meta_kubernetes_pod_name]
+                action: replace
+                target_label: kubernetes_pod_name
+          
+          # Monitor Kubernetes nodes
+          - job_name: 'kubernetes-nodes'
+            kubernetes_sd_configs:
+              - role: node
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+              - target_label: __address__
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/${1}/proxy/metrics
+          
+          # Monitor kube-state-metrics
+          - job_name: 'kube-state-metrics'
+            static_configs:
+              - targets: ['kube-state-metrics:8080']
+          
+          # Monitor cadvisor
+          - job_name: 'kubernetes-cadvisor'
+            scheme: https
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            kubernetes_sd_configs:
+              - role: node
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+              - target_label: __address__
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+            metric_relabel_configs:
+              - source_labels: [container_label_env]
+                regex: '(.+)'
+                target_label: env
+                replacement: '${1}'
+              - source_labels: [container_label_app]
+                regex: '(.+)'
+                target_label: app
+                replacement: '${1}'
+      alert-rules.yaml: |
+        # Prometheus alert rules
+        groups:
+          - name: todo-app.rules
+            rules:
+              # Health and availability alerts
+              - alert: TodoAppDown
+                expr: up{job="todo-app"} == 0
+                for: 2m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Todo App instance is down"
+                  description: "Todo App instance {{ $labels.instance }} has been down for more than 2 minutes."
+              
+              - alert: TodoAppHighErrorRate
+                expr: (rate(todo_app_http_requests_total{status=~"5.."}[5m]) / rate(todo_app_http_requests_total[5m])) * 100 > 5
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "High error rate on Todo App"
+                  description: "Todo App {{ $labels.instance }} has a high error rate (>5%) over the last 5 minutes."
+              
+              - alert: TodoAppResponseTimeHigh
+                expr: histogram_quantile(0.95, rate(todo_app_http_request_duration_seconds_bucket[5m])) > 1
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Todo App response time is high"
+                  description: "Todo App {{ $labels.instance }} 95th percentile response time is above 1 second."
+              
+              # Resource utilization alerts
+              - alert: TodoAppHighCPUUsage
+                expr: 100 - (avg by(instance) (irate(process_cpu_seconds_total{job="todo-app"}[5m])) * 100) > 80
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Todo App high CPU usage"
+                  description: "Todo App {{ $labels.instance }} CPU usage is above 80% for more than 5 minutes."
+              
+              - alert: TodoAppHighMemoryUsage
+                expr: (process_resident_memory_bytes{job="todo-app"} / process_virtual_memory_max_bytes{job="todo-app"}) * 100 > 85
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Todo App high memory usage"
+                  description: "Todo App {{ $labels.instance }} memory usage is above 85% for more than 5 minutes."
+          
+          - name: dapr.rules
+            rules:
+              # Dapr-specific alerts
+              - alert: DaprSidecarDown
+                expr: up{job="dapr"} == 0
+                for: 2m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Dapr sidecar is down"
+                  description: "Dapr sidecar {{ $labels.instance }} has been down for more than 2 minutes."
+              
+              - alert: DaprHighGRPCErrorRate
+                expr: (rate(dapr_grpc_completed_calls{status!~"OK|CANCELLED"}[5m]) / rate(dapr_grpc_completed_calls[5m])) * 100 > 5
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "High gRPC error rate in Dapr"
+                  description: "Dapr {{ $labels.instance }} has a high gRPC error rate (>5%) over the last 5 minutes."
+              
+              - alert: DaprStateOperationLatencyHigh
+                expr: histogram_quantile(0.95, rate(dapr_state_get_duration_seconds_bucket[5m])) > 0.5 or histogram_quantile(0.95, rate(dapr_state_set_duration_seconds_bucket[5m])) > 0.5
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Dapr state operation latency is high"
+                  description: "Dapr {{ $labels.instance }} 95th percentile state operation latency is above 0.5 seconds."
+          
+          - name: kafka.rules
+            rules:
+              # Kafka-specific alerts
+              - alert: KafkaDown
+                expr: up{job="kafka"} == 0
+                for: 2m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Kafka broker is down"
+                  description: "Kafka broker {{ $labels.instance }} has been down for more than 2 minutes."
+              
+              - alert: KafkaUnderReplicatedPartitions
+                expr: kafka_server_replicamanager_underreplicatedpartitions > 0
+                for: 5m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Kafka has under-replicated partitions"
+                  description: "Kafka cluster has {{ $value }} under-replicated partitions for more than 5 minutes."
+              
+              - alert: KafkaOfflinePartitions
+                expr: kafka_controller_kafkacontroller_offlinepartitionscount > 0
+                for: 2m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Kafka has offline partitions"
+                  description: "Kafka cluster has {{ $value }} offline partitions."
+              
+              - alert: KafkaTooManyActiveControllers
+                expr: count(kafka_controller_kafkacontroller_activecontrollercount == 1) > 1
+                for: 2m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Kafka has more than one active controller"
+                  description: "Kafka cluster has {{ $value }} active controllers, expected 1."
+          
+          - name: kubernetes.rules
+            rules:
+              # Kubernetes cluster alerts
+              - alert: KubeNodeNotReady
+                expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+                for: 15m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "Kubernetes node is not ready"
+                  description: "Node {{ $labels.node }} has been unready for more than 15 minutes."
+              
+              - alert: KubePodCrashLooping
+                expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+                for: 10m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Pod is crash looping"
+                  description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping."
+              
+              - alert: KubeCPUOvercommit
+                expr: (sum(namespace_cpu:kube_pod_container_resource_requests:sum{}) / sum(kube_node_status_allocatable{resource="cpu"})) * 100 > 80
+                for: 15m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Cluster has CPU overcommit"
+                  description: "Cluster has over 80% CPU overcommit for more than 15 minutes."
+      grafana-datasources.yaml: |
+        # Grafana data sources configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: grafana-datasources
+          namespace: monitoring
+        data:
+          datasources.yaml: |
+            apiVersion: 1
+            datasources:
+              - name: Prometheus
+                type: prometheus
+                url: http://prometheus:9090
+                access: proxy
+                isDefault: true
+                jsonData:
+                  timeInterval: 15s
+                  exemplarTraceIdDestinations:
+                    - name: traceID
+                      datasourceUid: tempo
+              
+              - name: Loki
+                type: loki
+                url: http://loki:3100
+                access: proxy
+                jsonData:
+                  derivedFields:
+                    - name: TraceID
+                      matcherRegex: "traceID\":\"(\\w+)"
+                      url: "$${__value.raw}"
+                      datasourceUid: tempo
+              
+              - name: Tempo
+                type: tempo
+                url: http://tempo:3200
+                access: proxy
+                jsonData:
+                  httpMethod: GET
+                  tracesToLogs:
+                    datasourceUid: 'loki'
+                    tags: ['cluster', 'hostname', 'level']
+                    mappedTags: [{ key: 'service.name', value: 'service' }]
+                    mapTagNamesEnabled: true
+                    spanStartTimeShift: '1h'
+                    spanEndTimeShift: '1h'
+                    filterByTraceID: true
+                    filterBySpanID: false
+                  serviceMap:
+                    datasourceUid: 'prometheus'
+                  search:
+                    hide: false
+                  nodeGraph:
+                    enabled: true
+      grafana-dashboards.yaml: |
+        # Grafana dashboard configurations
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: grafana-dashboards
+          namespace: monitoring
+        data:
+          todo-app-dashboard.json: |
+            {
+              "dashboard": {
+                "id": null,
+                "title": "Todo App Dashboard",
+                "tags": ["todo-app", "application"],
+                "style": "dark",
+                "timezone": "browser",
+                "refresh": "5s",
+                "schemaVersion": 16,
+                "version": 0,
+                "time": {
+                  "from": "now-15m",
+                  "to": "now"
+                },
+                "timepicker": {
+                  "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+                  "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+                },
+                "templating": {
+                  "list": [
+                    {
+                      "allValue": null,
+                      "current": {
+                        "selected": false,
+                        "text": "All",
+                        "value": "$__all"
+                      },
+                      "hide": 0,
+                      "includeAll": true,
+                      "label": "Namespace",
+                      "multi": true,
+                      "name": "namespace",
+                      "options": [],
+                      "query": "label_values(kube_pod_info, namespace)",
+                      "refresh": 1,
+                      "regex": "",
+                      "skipUrlSync": false,
+                      "sort": 0,
+                      "tagValuesQuery": "",
+                      "tagsQuery": "",
+                      "type": "query",
+                      "useTags": false
+                    },
+                    {
+                      "allValue": null,
+                      "current": {
+                        "selected": false,
+                        "text": "All",
+                        "value": "$__all"
+                      },
+                      "hide": 0,
+                      "includeAll": true,
+                      "label": "Pod",
+                      "multi": true,
+                      "name": "pod",
+                      "options": [],
+                      "query": "label_values(kube_pod_info{namespace=~\"$namespace\"}, pod)",
+                      "refresh": 1,
+                      "regex": "",
+                      "skipUrlSync": false,
+                      "sort": 0,
+                      "tagValuesQuery": "",
+                      "tagsQuery": "",
+                      "type": "query",
+                      "useTags": false
+                    }
+                  ]
+                },
+                "annotations": {
+                  "list": [
+                    {
+                      "builtIn": 1,
+                      "datasource": "-- Grafana --",
+                      "enable": true,
+                      "hide": true,
+                      "iconColor": "rgba(0, 211, 255, 1)",
+                      "name": "Annotations & Alerts",
+                      "type": "dashboard"
+                    }
+                  ]
+                },
+                "panels": [
+                  {
+                    "collapsed": false,
+                    "gridPos": {
+                      "h": 1,
+                      "w": 24,
+                      "x": 0,
+                      "y": 0
+                    },
+                    "id": 2,
+                    "panels": [],
+                    "title": "Application Performance",
+                    "type": "row"
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": "Prometheus",
+                    "fieldConfig": {
+                      "defaults": {
+                        "custom": {},
+                        "links": []
+                      },
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 8,
+                      "w": 12,
+                      "x": 0,
+                      "y": 1
+                    },
+                    "hiddenSeries": false,
+                    "id": 4,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.4.3",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "histogram_quantile(0.95, sum(rate(todo_app_http_request_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) by (le, namespace))",
+                        "interval": "",
+                        "legendFormat": "{{namespace}} - P95",
+                        "refId": "A"
+                      },
+                      {
+                        "expr": "histogram_quantile(0.99, sum(rate(todo_app_http_request_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) by (le, namespace))",
+                        "interval": "",
+                        "legendFormat": "{{namespace}} - P99",
+                        "refId": "B"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "HTTP Request Duration",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "format": "s",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": "0",
+                        "show": true
+                      },
+                      {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": "Prometheus",
+                    "fieldConfig": {
+                      "defaults": {
+                        "custom": {},
+                        "links": []
+                      },
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 8,
+                      "w": 12,
+                      "x": 12,
+                      "y": 1
+                    },
+                    "hiddenSeries": false,
+                    "id": 6,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.4.3",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "sum(rate(todo_app_http_requests_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) by (status, namespace)",
+                        "interval": "",
+                        "legendFormat": "{{namespace}} - {{status}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "HTTP Request Rate by Status",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "format": "reqps",
+                        "label": "Requests per second",
+                        "logBase": 1,
+                        "max": null,
+                        "min": "0",
+                        "show": true
+                      },
+                      {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "collapsed": false,
+                    "gridPos": {
+                      "h": 1,
+                      "w": 24,
+                      "x": 0,
+                      "y": 9
+                    },
+                    "id": 8,
+                    "panels": [],
+                    "title": "Resource Utilization",
+                    "type": "row"
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": "Prometheus",
+                    "fieldConfig": {
+                      "defaults": {
+                        "custom": {},
+                        "links": []
+                      },
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 8,
+                      "w": 12,
+                      "x": 0,
+                      "y": 10
+                    },
+                    "hiddenSeries": false,
+                    "id": 10,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.4.3",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "100 - (avg by(instance) (irate(process_cpu_seconds_total{namespace=~\"$namespace\", pod=~\"$pod\"}[5m])) * 100)",
+                        "interval": "",
+                        "legendFormat": "{{pod}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "CPU Usage",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "format": "percent",
+                        "label": null,
+                        "logBase": 1,
+                        "max": "100",
+                        "min": "0",
+                        "show": true
+                      },
+                      {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  },
+                  {
+                    "aliasColors": {},
+                    "bars": false,
+                    "dashLength": 10,
+                    "dashes": false,
+                    "datasource": "Prometheus",
+                    "fieldConfig": {
+                      "defaults": {
+                        "custom": {},
+                        "links": []
+                      },
+                      "overrides": []
+                    },
+                    "fill": 1,
+                    "fillGradient": 0,
+                    "gridPos": {
+                      "h": 8,
+                      "w": 12,
+                      "x": 12,
+                      "y": 10
+                    },
+                    "hiddenSeries": false,
+                    "id": 12,
+                    "legend": {
+                      "avg": false,
+                      "current": false,
+                      "max": false,
+                      "min": false,
+                      "show": true,
+                      "total": false,
+                      "values": false
+                    },
+                    "lines": true,
+                    "linewidth": 1,
+                    "nullPointMode": "null",
+                    "options": {
+                      "alertThreshold": true
+                    },
+                    "percentage": false,
+                    "pluginVersion": "7.4.3",
+                    "pointradius": 2,
+                    "points": false,
+                    "renderer": "flot",
+                    "seriesOverrides": [],
+                    "spaceLength": 10,
+                    "stack": false,
+                    "steppedLine": false,
+                    "targets": [
+                      {
+                        "expr": "(process_resident_memory_bytes{namespace=~\"$namespace\", pod=~\"$pod\"} / process_virtual_memory_max_bytes{namespace=~\"$namespace\", pod=~\"$pod\"}) * 100",
+                        "interval": "",
+                        "legendFormat": "{{pod}}",
+                        "refId": "A"
+                      }
+                    ],
+                    "thresholds": [],
+                    "timeFrom": null,
+                    "timeRegions": [],
+                    "timeShift": null,
+                    "title": "Memory Usage",
+                    "tooltip": {
+                      "shared": true,
+                      "sort": 0,
+                      "value_type": "individual"
+                    },
+                    "type": "graph",
+                    "xaxis": {
+                      "buckets": null,
+                      "mode": "time",
+                      "name": null,
+                      "show": true,
+                      "values": []
+                    },
+                    "yaxes": [
+                      {
+                        "format": "percent",
+                        "label": null,
+                        "logBase": 1,
+                        "max": "100",
+                        "min": "0",
+                        "show": true
+                      },
+                      {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": true
+                      }
+                    ],
+                    "yaxis": {
+                      "align": false,
+                      "alignLevel": null
+                    }
+                  }
+                ],
+                "refresh": "5s",
+                "schemaVersion": 27,
+                "style": "dark",
+                "tags": ["todo-app", "application"],
+                "templating": {
+                  "list": []
+                },
+                "time": {
+                  "from": "now-15m",
+                  "to": "now"
+                },
+                "timepicker": {},
+                "timezone": "",
+                "title": "Todo App Dashboard",
+                "uid": "todo-app",
+                "version": 1
+              }
+            }

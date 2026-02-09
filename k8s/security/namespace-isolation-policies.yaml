@@ -1,0 +1,124 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: todo-app
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dapr-comm
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: dapr-system
+      podSelector:
+        matchLabels:
+          app: dapr-sidecar
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: dapr-system
+      podSelector:
+        matchLabels:
+          app: dapr-sidecar
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-comm
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-app
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kafka
+      podSelector:
+        matchLabels:
+          app: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal-comm
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-app
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: todo-app
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dapr-system-ingress
+  namespace: dapr-system
+spec:
+  podSelector:
+    matchLabels:
+      app: dapr-sidecar
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: todo-app
+    ports:
+    - protocol: TCP
+      port: 3500
+    - protocol: TCP
+      port: 50001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-ingress
+  namespace: kafka
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: todo-app
+    - namespaceSelector:
+        matchLabels:
+          name: dapr-system
+    ports:
+    - protocol: TCP
+      port: 9092

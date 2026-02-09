@@ -1,45 +1,45 @@
 version: '3.8'
 
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
     environment:
-      - DATABASE_URL=postgresql://user:password@db:5432/todoapp
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - todo-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
     depends_on:
-      - db
-    volumes:
-      - ./backend:/app
-    command: uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      - zookeeper
     ports:
-      - "3000:3000"
+      - "9092:9092"
     environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-    depends_on:
-      - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - todo-network
 
-  db:
-    image: postgres:15
-    environment:
-      - POSTGRES_DB=todoapp
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
+  dapr-placement:
+    image: daprio/dapr:latest
+    command: ["./placement", "-port", "50005"]
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "50005:50005"
+    networks:
+      - todo-network
 
-volumes:
-  postgres_data:
+  dapr-sidecar-injector:
+    image: daprio/daprd:latest
+    ports:
+      - "3500:3500"
+    networks:
+      - todo-network
+
+networks:
+  todo-network:
+    driver: bridge

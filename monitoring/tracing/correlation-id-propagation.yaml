@@ -1,0 +1,331 @@
+# Correlation ID Propagation Configuration
+# Configuration for correlation ID propagation across services for distributed tracing
+
+# Correlation ID Generation and Management
+CORRELATION_ID_CONFIG:
+  GENERATION:
+    # Configuration for generating correlation IDs
+    generator_type: "uuid_v4"  # Options: uuid_v4, uuid_v7, snowflake, custom
+    format: "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"  # UUID format
+    length: 36  # Length of the correlation ID
+    
+    # Generation settings
+    thread_safe: true
+    collision_resistant: true
+    entropy_source: "crypto_random"
+    
+    # Custom generator (if using custom type)
+    custom_generator:
+      enabled: false
+      pattern: "TODO-[0-9]{8}-[A-Z0-9]{6}"  # Example: TODO-12345678-ABCDEF
+      alphabet: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+  PROPAGATION_HEADERS:
+    # Headers used for propagating correlation IDs
+    w3c_trace_context:
+      traceparent: "traceparent"
+      tracestate: "tracestate"
+      enabled: true
+    
+    b3_single_header:
+      b3: "b3"
+      enabled: true
+    
+    b3_split_headers:
+      x_b3_traceid: "X-B3-TraceId"
+      x_b3_spanid: "X-B3-SpanId"
+      x_b3_parentspanid: "X-B3-ParentSpanId"
+      x_b3_sampled: "X-B3-Sampled"
+      x_b3_flags: "X-B3-Flags"
+      enabled: true
+    
+    jaeger:
+      uber_trace_id: "uber-trace-id"
+      enabled: true
+    
+    custom_headers:
+      correlation_id: "X-Correlation-ID"
+      request_id: "X-Request-ID"
+      transaction_id: "X-Transaction-ID"
+      enabled: true
+
+  LIFETIME_MANAGEMENT:
+    # Configuration for managing correlation ID lifetime
+    storage_mechanism: "thread_local"  # Options: thread_local, async_local, context_var
+    inheritance: true  # Child threads/processes inherit parent's correlation ID
+    timeout: 3600  # 1 hour timeout for correlation ID context
+    
+    # Cleanup settings
+    automatic_cleanup: true
+    cleanup_on_thread_exit: true
+    cleanup_on_context_exit: true
+
+# Service-to-Service Propagation
+SERVICE_TO_SERVICE_PROPAGATION:
+  HTTP_PROPAGATION:
+    # Configuration for HTTP-based service communication
+    client_side:
+      header_injection:
+        enabled: true
+        priority:
+          - "traceparent"  # W3C standard first
+          - "X-Correlation-ID"  # Custom fallback
+          - "X-Request-ID"  # Common alternative
+        
+        injection_strategy:
+          always: true  # Always inject correlation ID if not present
+          override: false  # Don't override if already present
+    
+    server_side:
+      header_extraction:
+        enabled: true
+        priority:
+          - "traceparent"  # W3C standard first
+          - "X-Correlation-ID"  # Custom header
+          - "X-Request-ID"  # Common alternative
+          - "uber-trace-id"  # Jaeger
+        
+        extraction_strategy:
+          first_found: true  # Use first valid correlation ID found
+          validation: true  # Validate extracted correlation ID format
+    
+    supported_protocols:
+      http1:
+        enabled: true
+        header_based: true
+      http2:
+        enabled: true
+        header_based: true
+        stream_based: false
+      grpc:
+        enabled: true
+        metadata_based: true
+        header_based: true
+
+  MESSAGE_QUEUE_PROPAGATION:
+    # Configuration for message queue-based communication
+    kafka:
+      header_based: true
+      key_based: false
+      value_embedded: false
+      
+      header_name: "correlation-id"
+      serialization_format: "string"
+    
+    rabbitmq:
+      header_based: true
+      property_based: true
+      
+      header_name: "correlation_id"
+      property_name: "correlationId"
+    
+    amqp:
+      header_based: true
+      correlation_id_field: true
+      
+      field_name: "correlation_id"
+
+  DATABASE_PROPAGATION:
+    # Configuration for database-based communication
+    connection_context:
+      enabled: true
+      storage: "connection_metadata"
+      column_name: "correlation_id"
+    
+    query_annotation:
+      enabled: false  # Usually not recommended for performance
+      comment_style: "sql_comment"
+      annotation_format: "/* CID: {correlation_id} */"
+
+# Framework Integration
+FRAMEWORK_INTEGRATION:
+  WEB_FRAMEWORKS:
+    # Configuration for popular web frameworks
+    spring_boot:
+      starter: "spring-boot-starter-actuator"
+      properties:
+        management.tracing.enabled: true
+        management.otlp.traces.endpoint: "http://jaeger-collector:4317"
+        management.tracing.sampling.probability: 1.0  # 100% in development
+    
+    express_js:
+      middleware: "express-http-context"
+      usage:
+        - "require('express-http-context')"
+        - "app.use(httpContext.middleware())"
+    
+    django:
+      middleware: "django-opentracing"
+      settings:
+        OPENTRACING_TRACE_ALL: true
+        OPENTRACING_CHILD_OF_TRACE_ALL: true
+    
+    flask:
+      extension: "flask-opentracing"
+      initialization:
+        - "from flask_opentracing import FlaskTracer"
+        - "tracer = init_tracer(service_name='todo-app')"
+
+  MICROSERVICE_FRAMEWORKS:
+    # Configuration for microservice frameworks
+    dapr:
+      configuration:
+        tracing:
+          enabled: true
+          expandParams: true
+          includeBody: true
+        samplingRate: "1"  # 100% sampling in development
+      
+      component_config:
+        type: "zipkin"
+        version: "v1"
+        metadata:
+          - name: "endpointAddress"
+            value: "http://zipkin:9411/api/v2/spans"
+    
+    istio:
+      tracing_config:
+        provider: "jaeger"
+        jaeger:
+          endpoint: "http://jaeger-collector:14268/api/traces"
+          sampling: 1.0  # 100% sampling in development
+
+# Context Propagation Across Threads and Async Operations
+CONTEXT_PROPAGATION:
+  THREAD_PROPAGATION:
+    # Configuration for propagating context across threads
+    thread_factory_wrapper:
+      enabled: true
+      automatic_inheritance: true
+    
+    executor_service_wrapper:
+      enabled: true
+      submit_methods_wrapped: true
+      execute_methods_wrapped: true
+    
+    scheduled_executor_wrapper:
+      enabled: true
+      scheduling_methods_wrapped: true
+
+  ASYNC_PROPAGATION:
+    # Configuration for propagating context across async operations
+    completable_future_wrapper:
+      enabled: true
+      all_methods_wrapped: true
+    
+    reactor_mono_wrapper:
+      enabled: true  # For Project Reactor (Spring WebFlux)
+      subscribe_methods_wrapped: true
+    
+    async_task_wrapper:
+      enabled: true
+      decorator_available: true
+
+# Validation and Sanitization
+VALIDATION_SANITIZATION:
+  # Configuration for validating and sanitizing correlation IDs
+  format_validation:
+    enabled: true
+    regex_pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"  # UUID v4
+    length_validation: true
+    character_validation: true
+  
+  sanitization:
+    enabled: true
+    invalid_handling: "generate_new"  # Options: generate_new, reject, accept
+    max_length: 100
+    allowed_characters: "alphanumeric_hyphens_underscores"
+  
+  security_validation:
+    enabled: true
+    max_age: 86400  # 24 hours
+    rate_limiting: false  # Per IP or service
+    blacklisted_values: ["00000000-0000-0000-0000-000000000000", "11111111-1111-1111-1111-111111111111"]
+
+# Monitoring and Observability
+MONITORING_OBSERVABILITY:
+  # Configuration for monitoring correlation ID usage
+  metrics_collection:
+    enabled: true
+    metrics:
+      - correlation_ids_generated_total
+      - correlation_ids_extracted_total
+      - correlation_ids_injected_total
+      - invalid_correlation_ids_total
+      - correlation_id_collision_total
+    
+    labels:
+      service: "${SERVICE_NAME}"
+      environment: "${ENVIRONMENT}"
+      region: "${REGION}"
+
+  health_checks:
+    enabled: true
+    endpoints:
+      correlation_id_health: "/health/correlation-id"
+    
+    checks:
+      generator_health: true
+      propagation_health: true
+      storage_health: true
+
+  logging:
+    enabled: true
+    log_level: "DEBUG"
+    sensitive_data_masking: true
+    audit_logging: true
+
+# Performance Considerations
+PERFORMANCE_CONFIG:
+  # Configuration to optimize performance
+  caching:
+    enabled: true
+    cache_size: 1000
+    cache_expiry: 3600  # 1 hour
+    
+    cache_impl: "concurrent_lru"
+    cache_stats_enabled: true
+  
+  memory_management:
+    object_pooling: true
+    pooled_objects: ["CorrelationContext", "TraceContext"]
+    gc_optimization: true
+  
+  threading:
+    lock_free_algorithms: true
+    concurrent_data_structures: true
+
+# Testing and Debugging
+TESTING_DEBUGGING:
+  # Configuration for testing and debugging
+  test_utilities:
+    correlation_id_stub: true
+    context_injector: true
+    propagation_verifier: true
+  
+  debugging:
+    debug_header: "X-Debug-Correlation-ID"
+    debug_mode: false
+    trace_debug_info: false
+  
+  development_options:
+    predictable_ids: false  # Generate predictable IDs for testing
+    logging_verbose: false  # More verbose logging in development
+    validation_disabled: false  # Disable validation in development
+
+# Migration and Compatibility
+MIGRATION_COMPATIBILITY:
+  # Configuration for migration and compatibility
+  legacy_support:
+    legacy_header_names:
+      - "X-Transaction-ID"
+      - "X-Trace-ID"
+      - "Request-ID"
+    
+    legacy_format_support: true
+    migration_mode: "dual_write"  # Options: dual_write, read_legacy_write_new, new_only
+  
+  versioning:
+    schema_version: "1.0"
+    backward_compatibility: true
+    forward_compatibility: false

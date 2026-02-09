@@ -1,0 +1,1261 @@
+# Performance Benchmarking Procedures
+# Configuration for performance benchmarking in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: performance-benchmarking-config
+  namespace: todo-app
+data:
+  benchmarking-tools.yaml: |
+    # Performance benchmarking tools configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: benchmarking-tools-config
+      namespace: monitoring
+    data:
+      wrk-config.lua: |
+        -- wrk configuration for Todo App benchmarking
+        local counter = 0
+        local threads = {}
+        
+        function setup(thread)
+          thread:set("id", counter)
+          counter = counter + 1
+          threads[counter] = thread
+        end
+        
+        function init(args)
+          local thread = {id = tonumber(args[1])}
+          math.randomseed(os.time() + thread.id)
+        end
+        
+        function request()
+          local path = "/api/v1/tasks"
+          local headers = {}
+          headers["Content-Type"] = "application/json"
+          headers["User-Agent"] = "Todo-App-Benchmark/1.0"
+          headers["X-Request-ID"] = math.random(100000, 999999)
+          
+          return wrk.format("GET", path, headers)
+        end
+        
+        function response(status, headers, body)
+          -- Process response
+          if status ~= 200 then
+            print("Non-200 response: " .. status)
+          end
+        end
+      jmeter-config.jmx: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.4.1">
+          <hashTree>
+            <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Todo App Performance Test">
+              <elementProp name="TestPlan.arguments" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments">
+                <collectionProp name="Arguments.arguments"/>
+              </elementProp>
+              <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+              <elementProp name="TestPlan.thread_groups" elementType="HashTree">
+                <boolProp name="ThreadGroup.on_sample_error">continue</boolProp>
+                <elementProp name="ThreadGroup.main_controller" elementType="LoopController">
+                  <stringProp name="LoopController.loops">-1</stringProp>
+                </elementProp>
+                <stringProp name="ThreadGroup.num_threads">100</stringProp>
+                <stringProp name="ThreadGroup.ramp_time">30</stringProp>
+                <boolProp name="ThreadGroup.scheduler">true</boolProp>
+                <stringProp name="ThreadGroup.duration">300</stringProp>
+                <stringProp name="ThreadGroup.delay"></stringProp>
+                <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+              </elementProp>
+            </TestPlan>
+            <hashTree>
+              <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /api/v1/tasks">
+                <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+                  <collectionProp name="Arguments.arguments"/>
+                </elementProp>
+                <stringProp name="HTTPSampler.domain">todo-app.todo-app.svc.cluster.local</stringProp>
+                <stringProp name="HTTPSampler.port">80</stringProp>
+                <stringProp name="HTTPSampler.protocol">http</stringProp>
+                <stringProp name="HTTPSampler.path">/api/v1/tasks</stringProp>
+                <stringProp name="HTTPSampler.method">GET</stringProp>
+                <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+                <boolProp name="HTTPSampler.auto_redirects">false</boolProp>
+                <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+                <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+                <boolProp name="HTTPSampler.monitor">false</boolProp>
+                <stringProp name="HTTPSampler.embedded_url_re"></stringProp>
+              </HTTPSamplerProxy>
+              <hashTree/>
+            </hashTree>
+          </hashTree>
+        </jmeterTestPlan>
+      artillery-config.yml: |
+        # Artillery.io configuration for Todo App
+        config:
+          target: "http://todo-app.todo-app.svc.cluster.local"
+          phases:
+            - duration: 60
+              arrivalRate: 10
+              name: "Warm up"
+            - duration: 300
+              arrivalRate: 50
+              rampTo: 100
+              name: "Ramp up load"
+            - duration: 600
+              arrivalRate: 100
+              name: "Sustained load"
+          defaults:
+            headers:
+              User-Agent: "Todo-App-Load-Tester/1.0"
+              Content-Type: "application/json"
+          engines:
+            http:
+              timeout: 30
+              maxSockets: 100
+              maxFreeSockets: 10
+              keepAlive: true
+        scenarios:
+          - name: "API Health Check"
+            weight: 10
+            flow:
+              - get:
+                  url: "/health"
+              - think: 1
+          - name: "Get Tasks"
+            weight: 70
+            flow:
+              - get:
+                  url: "/api/v1/tasks"
+                  headers:
+                    authorization: "Bearer {{ $randomString(32) }}"
+              - think: 2
+          - name: "Create Task"
+            weight: 20
+            flow:
+              - post:
+                  url: "/api/v1/tasks"
+                  json:
+                    title: "Load test task {{ $randomString(10) }}"
+                    description: "Task created during load test"
+                    completed: false
+              - think: 5
+  benchmarking-schedule.yaml: |
+    # Scheduled performance benchmarking
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: todo-app-performance-benchmark
+      namespace: monitoring
+    spec:
+      schedule: "0 2 * * 0"  # Every Sunday at 2 AM
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: benchmark-sa
+              containers:
+              - name: benchmark
+                image: busybox:1.35
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Install benchmarking tools
+                  apk add --no-cache curl wget bc gnuplot
+                  
+                  # Run performance benchmarks
+                  echo "Starting performance benchmarking..."
+                  
+                  # Test endpoint availability
+                  if ! curl -f http://todo-app.todo-app.svc.cluster.local/health; then
+                    echo "Error: Todo App health check failed"
+                    exit 1
+                  fi
+                  
+                  # Run basic performance test
+                  echo "Running basic performance test..."
+                  START_TIME=$(date +%s)
+                  for i in $(seq 1 100); do
+                    curl -s -o /dev/null -w "%{time_total}," http://todo-app.todo-app.svc.cluster.local/api/v1/tasks
+                  done > /tmp/response_times.csv
+                  END_TIME=$(date +%s)
+                  
+                  # Calculate metrics
+                  RESPONSE_TIMES=$(cat /tmp/response_times.csv | tr ',' '\n' | grep -v '^$')
+                  AVG_RESPONSE=$(echo "$RESPONSE_TIMES" | awk '{sum += $1; count++} END {print sum/count}')
+                  MIN_RESPONSE=$(echo "$RESPONSE_TIMES" | sort -n | head -1)
+                  MAX_RESPONSE=$(echo "$RESPONSE_TIMES" | sort -n | tail -1)
+                  P95_RESPONSE=$(echo "$RESPONSE_TIMES" | sort -n | awk 'BEGIN {idx=int(NR*0.95)} NR==idx {print $1}')
+                  
+                  # Save results
+                  cat << EOF > /tmp/benchmark_results_$(date +%Y%m%d_%H%M%S).json
+                  {
+                    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                    "test_type": "basic_performance",
+                    "requests": 100,
+                    "avg_response_time": $AVG_RESPONSE,
+                    "min_response_time": $MIN_RESPONSE,
+                    "max_response_time": $MAX_RESPONSE,
+                    "p95_response_time": $P95_RESPONSE,
+                    "duration": $((END_TIME - START_TIME))
+                  }
+                  EOF
+                  
+                  # Upload results to monitoring system
+                  # curl -X POST -H "Content-Type: application/json" \
+                  #   -d @/tmp/benchmark_results_$(date +%Y%m%d_%H%M%S).json \
+                  #   http://benchmark-results-monitoring:8080/api/results
+                  
+                  echo "Performance benchmarking completed"
+                volumeMounts:
+                - name: benchmark-results
+                  mountPath: /tmp
+              volumes:
+              - name: benchmark-results
+                emptyDir: {}
+              restartPolicy: OnFailure
+    ---
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: todo-app-load-test
+      namespace: monitoring
+    spec:
+      schedule: "0 3 * * 1"  # Every Monday at 3 AM
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: benchmark-sa
+              containers:
+              - name: load-test
+                image: busybox:1.35
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Install artillery
+                  apk add --no-cache nodejs npm
+                  npm install -g artillery@latest
+                  
+                  # Create load test configuration
+                  cat << 'EOF' > /tmp/load-test-config.yml
+                  config:
+                    target: "http://todo-app.todo-app.svc.cluster.local"
+                    phases:
+                      - duration: 60
+                        arrivalRate: 10
+                        name: "Warm up"
+                      - duration: 300
+                        arrivalRate: 50
+                        rampTo: 100
+                        name: "Ramp up load"
+                      - duration: 600
+                        arrivalRate: 100
+                        name: "Sustained load"
+                    defaults:
+                      headers:
+                        User-Agent: "Todo-App-Load-Tester/1.0"
+                        Content-Type: "application/json"
+                  scenarios:
+                    - name: "Get Tasks"
+                      weight: 70
+                      flow:
+                        - get:
+                            url: "/api/v1/tasks"
+                        - think: 2
+                    - name: "Create Task"
+                      weight: 30
+                      flow:
+                        - post:
+                            url: "/api/v1/tasks"
+                            json:
+                              title: "Load test task {{ $randomString(10) }}"
+                              description: "Task created during load test"
+                              completed: false
+                        - think: 5
+                  EOF
+                  
+                  # Run load test
+                  echo "Starting load test..."
+                  artillery run /tmp/load-test-config.yml --output /tmp/load-test-report.json
+                  
+                  # Extract key metrics
+                  TOTAL_REQUESTS=$(jq '.aggregate.scenariosCreated' /tmp/load-test-report.json)
+                  SUCCESSFUL_REQUESTS=$(jq '.aggregate.counters."http.response.status.200"' /tmp/load-test-report.json)
+                  FAILED_REQUESTS=$((TOTAL_REQUESTS - SUCCESSFUL_REQUESTS))
+                  AVG_RESPONSE_TIME=$(jq '.aggregate.summaries."http.response_time".mean' /tmp/load-test-report.json)
+                  P95_RESPONSE_TIME=$(jq '.aggregate.summaries."http.response_time".p95' /tmp/load-test-report.json)
+                  RPS=$(echo "scale=2; $TOTAL_REQUESTS / 1560" | bc)  # 1560 seconds total test time
+                  
+                  # Save summary
+                  cat << EOF > /tmp/load-test-summary-$(date +%Y%m%d_%H%M%S).json
+                  {
+                    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+                    "test_type": "load_test",
+                    "total_requests": $TOTAL_REQUESTS,
+                    "successful_requests": $SUCCESSFUL_REQUESTS,
+                    "failed_requests": $FAILED_REQUESTS,
+                    "success_rate": $(echo "scale=4; $SUCCESSFUL_REQUESTS / $TOTAL_REQUESTS * 100" | bc),
+                    "avg_response_time": $AVG_RESPONSE_TIME,
+                    "p95_response_time": $P95_RESPONSE_TIME,
+                    "rps": $RPS
+                  }
+                  EOF
+                  
+                  echo "Load test completed"
+                volumeMounts:
+                - name: load-test-results
+                  mountPath: /tmp
+              volumes:
+              - name: load-test-results
+                emptyDir: {}
+              restartPolicy: OnFailure
+  benchmarking-documentation.md: |
+    # Performance Benchmarking Procedures
+    
+    ## Overview
+    This document outlines the performance benchmarking procedures for the Todo AI system to ensure optimal performance and identify bottlenecks.
+    
+    ## Benchmarking Objectives
+    
+    ### 1. Baseline Performance
+    - Establish baseline performance metrics
+    - Document current system capabilities
+    - Identify performance trends over time
+    
+    ### 2. Load Testing
+    - Test system under expected peak loads
+    - Identify breaking points
+    - Validate auto-scaling behavior
+    
+    ### 3. Stress Testing
+    - Push system beyond normal operational capacity
+    - Identify failure modes
+    - Validate graceful degradation
+    
+    ### 4. Soak Testing
+    - Test system stability over extended periods
+    - Identify memory leaks and resource accumulation
+    - Validate long-term performance
+    
+    ## Key Performance Indicators (KPIs)
+    
+    ### Response Time
+    - P50 (Median): < 100ms
+    - P95: < 500ms
+    - P99: < 1000ms
+    
+    ### Throughput
+    - Expected: 1000 requests/second
+    - Peak: 2000 requests/second
+    - Sustained: 800 requests/second
+    
+    ### Availability
+    - Target: 99.9% uptime
+    - Recovery time: < 1 minute
+    - Mean time between failures: > 24 hours
+    
+    ### Resource Utilization
+    - CPU: < 70% average, < 90% peak
+    - Memory: < 80% average, < 95% peak
+    - Disk: < 80% utilization
+    - Network: < 80% of available bandwidth
+    
+    ## Benchmarking Tools
+    
+    ### 1. wrk
+    - High-performance HTTP benchmarking tool
+    - Lua scripting for complex scenarios
+    - Low resource overhead
+    
+    ### 2. Artillery
+    - Modern, feature-rich load testing toolkit
+    - Supports WebSocket, Socket.IO, and HTTP/2
+    - Real-time metrics and reporting
+    
+    ### 3. JMeter
+    - Comprehensive load testing platform
+    - GUI and CLI modes
+    - Extensive plugin ecosystem
+    
+    ## Test Scenarios
+    
+    ### 1. Functional Performance Test
+    - Test basic CRUD operations
+    - Measure response times for each operation
+    - Validate data consistency
+    
+    ### 2. Concurrent User Simulation
+    - Simulate realistic user behavior
+    - Mix of read and write operations
+    - Varying request patterns
+    
+    ### 3. Database Performance Test
+    - Test database query performance
+    - Validate indexing strategies
+    - Measure connection pooling efficiency
+    
+    ### 4. API Gateway Performance Test
+    - Test rate limiting and throttling
+    - Validate authentication performance
+    - Measure request routing efficiency
+    
+    ## Reporting and Analysis
+    
+    ### Metrics Collection
+    - Response times (P50, P95, P99)
+    - Throughput (requests per second)
+    - Error rates
+    - Resource utilization
+    - Success/failure ratios
+    
+    ### Trend Analysis
+    - Compare against historical baselines
+    - Identify performance regressions
+    - Track improvement over time
+    
+    ### Anomaly Detection
+    - Identify unusual performance patterns
+    - Correlate with system changes
+    - Flag potential issues
+    
+    ## Performance Tuning Recommendations
+    
+    ### 1. Database Optimization
+    - Query optimization
+    - Index tuning
+    - Connection pooling
+    - Caching strategies
+    
+    ### 2. Application Optimization
+    - Code profiling
+    - Algorithm improvements
+    - Memory management
+    - Asynchronous processing
+    
+    ### 3. Infrastructure Optimization
+    - Resource allocation
+    - Load balancing
+    - CDN utilization
+    - Network optimization
+    
+    ## Best Practices
+    
+    ### 1. Consistent Testing Environment
+    - Use isolated test environments
+    - Control external dependencies
+    - Document test configurations
+    
+    ### 2. Realistic Test Scenarios
+    - Mirror production usage patterns
+    - Include realistic data volumes
+    - Simulate actual user behavior
+    
+    ### 3. Regular Benchmarking
+    - Schedule regular performance tests
+    - Benchmark after major changes
+    - Establish performance gates
+    
+    ### 4. Comprehensive Monitoring
+    - Monitor during benchmarking
+    - Collect system-level metrics
+    - Correlate application and infrastructure metrics
+  benchmarking-monitoring.yaml: |
+    # Monitoring configuration for benchmarking
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: benchmarking-monitoring-config
+      namespace: monitoring
+    data:
+      prometheus-rules.yaml: |
+        groups:
+        - name: benchmarking-monitoring
+          rules:
+          - alert: PerformanceRegression
+            expr: avg_over_time(response_time_p95[1h]) > bool (avg_over_time(response_time_p95[24h]) * 1.5)
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Performance regression detected"
+              description: "P95 response time has increased by more than 50% compared to 24-hour average for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: HighErrorRateDuringBenchmark
+            expr: rate(error_total[5m]) / rate(requests_total[5m]) > 0.05
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High error rate during benchmark"
+              description: "Error rate exceeded 5% during benchmark for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: ResourceSaturation
+            expr: avg by(container) (rate(container_cpu_usage_seconds_total[5m])) > 0.9
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "CPU saturation detected"
+              description: "CPU usage exceeded 90% for container {{ $labels.container }} in namespace {{ $labels.namespace }}"
+          
+          - alert: MemoryPressure
+            expr: container_memory_working_set_bytes / container_spec_memory_limit_bytes > 0.85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Memory pressure detected"
+              description: "Memory usage exceeded 85% of limit for container {{ $labels.container }} in namespace {{ $labels.namespace }}"
+      grafana-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Performance Benchmarking Dashboard",
+            "tags": ["performance", "benchmarking", "monitoring"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Namespace",
+                  "multi": true,
+                  "name": "namespace",
+                  "options": [],
+                  "query": "label_values(response_time_p95, namespace)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                },
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Service",
+                  "multi": true,
+                  "name": "service",
+                  "options": [],
+                  "query": "label_values(response_time_p95, service)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Response Time Benchmarks",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 4,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "histogram_quantile(0.50, rate(response_time_seconds_bucket{namespace=~\"$namespace\", service=~\"$service\"}[5m]))",
+                    "interval": "",
+                    "legendFormat": "{{service}} - P50",
+                    "refId": "A"
+                  },
+                  {
+                    "expr": "histogram_quantile(0.95, rate(response_time_seconds_bucket{namespace=~\"$namespace\", service=~\"$service\"}[5m]))",
+                    "interval": "",
+                    "legendFormat": "{{service}} - P95",
+                    "refId": "B"
+                  },
+                  {
+                    "expr": "histogram_quantile(0.99, rate(response_time_seconds_bucket{namespace=~\"$namespace\", service=~\"$service\"}[5m]))",
+                    "interval": "",
+                    "legendFormat": "{{service}} - P99",
+                    "refId": "C"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Response Time Quantiles",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "s",
+                    "label": "Response Time",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(requests_total{namespace=~\"$namespace\", service=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Throughput (Requests per Second)",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "reqps",
+                    "label": "Requests per Second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 9
+                },
+                "id": 8,
+                "panels": [],
+                "title": "Resource Utilization During Benchmarks",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 10,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{container}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "CPU Usage",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percentunit",
+                    "label": "CPU Usage",
+                    "logBase": 1,
+                    "max": "1",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 12,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "container_memory_working_set_bytes{namespace=~\"$namespace\", container=~\"$service\"} / container_spec_memory_limit_bytes{namespace=~\"$namespace\", container=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "{{container}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Memory Usage %",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percentunit",
+                    "label": "Memory Usage",
+                    "logBase": 1,
+                    "max": "1",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 18
+                },
+                "id": 14,
+                "panels": [],
+                "title": "Error Rates and Success Metrics",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 19
+                },
+                "hiddenSeries": false,
+                "id": 16,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(error_total{namespace=~\"$namespace\", service=~\"$service\"}[5m]) / rate(requests_total{namespace=~\"$namespace\", service=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Error Rate",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percentunit",
+                    "label": "Error Rate",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 19
+                },
+                "hiddenSeries": false,
+                "id": 18,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(success_total{namespace=~\"$namespace\", service=~\"$service\"}[5m]) / rate(requests_total{namespace=~\"$namespace\", service=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Success Rate",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percentunit",
+                    "label": "Success Rate",
+                    "logBase": 1,
+                    "max": "1",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 27,
+            "style": "dark",
+            "tags": ["performance", "benchmarking", "monitoring"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Performance Benchmarking Dashboard",
+            "uid": "performance-benchmarking",
+            "version": 1
+          }
+        }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: benchmark-sa
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: benchmark-role
+  namespace: monitoring
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: benchmark-rolebinding
+  namespace: monitoring
+subjects:
+- kind: ServiceAccount
+  name: benchmark-sa
+  namespace: monitoring
+roleRef:
+  kind: Role
+  name: benchmark-role
+  apiGroup: rbac.authorization.k8s.io

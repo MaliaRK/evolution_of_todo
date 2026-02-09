@@ -1,0 +1,47 @@
+# Kafka Topic Definitions
+# Define topics with appropriate partitioning and replication for the Todo AI system
+
+# Topic for todo task events
+todo-task-events:
+  partitions: 3
+  replication-factor: 1
+  config:
+    retention.ms: 604800000  # 7 days retention
+    segment.bytes: 1073741824  # 1GB segment size
+    cleanup.policy: compact
+
+# Topic for user activity events
+user-activity-events:
+  partitions: 3
+  replication-factor: 1
+  config:
+    retention.ms: 2592000000  # 30 days retention
+    segment.bytes: 1073741824  # 1GB segment size
+    cleanup.policy: delete
+
+# Topic for system metrics
+system-metrics:
+  partitions: 2
+  replication-factor: 1
+  config:
+    retention.ms: 604800000  # 7 days retention
+    segment.bytes: 1073741824  # 1GB segment size
+    cleanup.policy: delete
+
+# Topic for error events (dead letter queue)
+error-events:
+  partitions: 1
+  replication-factor: 1
+  config:
+    retention.ms: 604800000  # 7 days retention
+    segment.bytes: 1073741824  # 1GB segment size
+    cleanup.policy: delete
+
+# Topic for notification events
+notification-events:
+  partitions: 2
+  replication-factor: 1
+  config:
+    retention.ms: 86400000  # 1 day retention
+    segment.bytes: 1073741824  # 1GB segment size
+    cleanup.policy: delete

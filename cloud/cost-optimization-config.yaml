@@ -1,0 +1,900 @@
+# Cloud Cost Optimization Configurations
+# Configuration for optimizing costs in cloud environments
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-cost-optimization-config
+  namespace: todo-app
+data:
+  # Azure cost optimization configuration
+  azure-cost-optimization.yaml: |
+    # Azure Cost Optimization Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-cost-optimization-config
+      namespace: cost-optimization
+    data:
+      azure-cost-config.json: |
+        {
+          "subscriptionId": "<azure-subscription-id>",
+          "resourceGroupName": "todo-app-rg",
+          "costManagement": {
+            "enableCostAlerts": true,
+            "budgetAmount": 1000,
+            "timeGrain": "Monthly",
+            "category": "DevTest",
+            "notifications": {
+              "enabled": true,
+              "threshold": 90,
+              "contactEmails": ["finance@todo-app.com"],
+              "contactRoles": ["Owner"]
+            }
+          },
+          "reservedInstances": {
+            "enableComputeReservation": true,
+            "computeReservationTerm": "P1Y",
+            "computeReservationScope": "SingleSubscription",
+            "computeReservationQuantity": 3,
+            "computeReservationSavingsPercent": 65
+          },
+          "spotInstances": {
+            "enableForNodePools": true,
+            "maxPrice": -1,
+            "evictionPolicy": "Delete",
+            "priority": "Spot"
+          },
+          "autoShutdown": {
+            "enableForDevEnvironments": true,
+            "shutdownTime": "22:00",
+            "timezone": "UTC",
+            "daysIncluded": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+          },
+          "monitoring": {
+            "enableAdvisorRecommendations": true,
+            "advisorCategories": ["Cost", "HighAvailability", "Performance", "Security"],
+            "enableCostAnalysis": true,
+            "costAnalysisView": {
+              "groupBy": ["ResourceGroupName", "MeterCategory"],
+              "timeRange": "LastMonth",
+              "chartType": "Area"
+            }
+          },
+          "storageOptimization": {
+            "enableCoolStorage": true,
+            "coolStorageThresholdDays": 30,
+            "enableArchiveStorage": true,
+            "archiveStorageThresholdDays": 90,
+            "enableBlobLifecycleManagement": true
+          },
+          "networkOptimization": {
+            "enableTrafficManager": false,
+            "enableCDN": true,
+            "cdnProfileSku": "Standard_Microsoft",
+            "enableExpressRoute": false,
+            "expressRouteBandwidth": "50",
+            "expressRoutePeeringLocation": "Silicon Valley"
+          }
+        }
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-vm-sizing-config
+      namespace: cost-optimization
+    data:
+      vm-sizing-strategy.yaml: |
+        # Azure VM Sizing Strategy
+        sizingRecommendations:
+          development:
+            - vmType: "Standard_B2s"
+              cpu: 2
+              memory: "4 GiB"
+              storage: "16 GiB SSD"
+              purpose: "Development and testing"
+              costOptimization: "Low priority VMs allowed"
+          staging:
+            - vmType: "Standard_D2s_v3"
+              cpu: 2
+              memory: "8 GiB"
+              storage: "32 GiB SSD"
+              purpose: "Staging and pre-production"
+              costOptimization: "Reserved instances possible"
+          production:
+            - vmType: "Standard_D4s_v3"
+              cpu: 4
+              memory: "16 GiB"
+              storage: "64 GiB SSD"
+              purpose: "Production workload"
+              costOptimization: "Reserved instances recommended"
+            - vmType: "Standard_D8s_v3"
+              cpu: 8
+              memory: "32 GiB"
+              storage: "128 GiB SSD"
+              purpose: "High-performance production"
+              costOptimization: "Reserved instances required"
+        spotVmRecommendations:
+          batchProcessing:
+            - vmType: "Standard_F2s_v2"
+              cpu: 2
+              memory: "4 GiB"
+              maxPrice: 0.05
+              evictionPolicy: "Delete"
+              purpose: "Batch processing workloads"
+          development:
+            - vmType: "Standard_B2s"
+              cpu: 2
+              memory: "4 GiB"
+              maxPrice: 0.02
+              evictionPolicy: "Delete"
+              purpose: "Development environments"
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-storage-cost-config
+      namespace: cost-optimization
+    data:
+      storage-cost-optimization.yaml: |
+        # Azure Storage Cost Optimization
+        storageOptimization:
+          redundancyOptions:
+            production:
+              type: "ZRS"  # Zone-redundant storage for high availability
+              cost: "Highest"
+            staging:
+              type: "LRS"  # Locally redundant storage for cost savings
+              cost: "Lowest"
+            development:
+              type: "LRS"  # Locally redundant storage for cost savings
+              cost: "Lowest"
+          accessTiers:
+            hot:
+              purpose: "Frequently accessed data"
+              latency: "Low"
+              cost: "Highest"
+              recommendation: "For active application data"
+            cool:
+              purpose: "Infrequently accessed data"
+              latency: "Low"
+              cost: "Lower"
+              transitionPeriod: "30 days"
+              recommendation: "For data accessed less than once per month"
+            archive:
+              purpose: "Rarely accessed data"
+              latency: "High (hours)"
+              cost: "Lowest"
+              transitionPeriod: "90 days"
+              recommendation: "For long-term backups and archives"
+          lifecycleManagement:
+            rules:
+              - name: "transition-to-cool-after-30-days"
+                enabled: true
+                filters:
+                  prefix: "todo-app/logs/"
+                actions:
+                  baseBlob:
+                    tierToCool:
+                      daysAfterModificationGreaterThan: 30
+              - name: "transition-to-archive-after-90-days"
+                enabled: true
+                filters:
+                  prefix: "todo-app/backups/"
+                actions:
+                  baseBlob:
+                    tierToArchive:
+                      daysAfterModificationGreaterThan: 90
+              - name: "delete-after-365-days"
+                enabled: true
+                filters:
+                  prefix: "todo-app/temp/"
+                actions:
+                  baseBlob:
+                    delete:
+                      daysAfterModificationGreaterThan: 365
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-cost-optimization-config
+  namespace: todo-app
+data:
+  # Google Cloud cost optimization configuration
+  gcp-cost-optimization.yaml: |
+    # Google Cloud Cost Optimization Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gcp-cost-optimization-config
+      namespace: cost-optimization
+    data:
+      gcp-cost-config.json: |
+        {
+          "projectId": "todo-app-project",
+          "billingAccount": "000000-000000-000000",
+          "costManagement": {
+            "enableBudgetAlerts": true,
+            "budgetAmount": 1000,
+            "alertSpentAt": [0.5, 0.75, 0.9, 1.0],
+            "alertPubSubTopic": "projects/todo-app-project/topics/cost-alerts",
+            "creditTypesTreatment": "INCLUDE_ALL_CREDITS"
+          },
+          "committedUseDiscounts": {
+            "enableForCompute": true,
+            "commitmentType": "MEMORY_OPTIMIZED",
+            "commitmentDuration": "TWELVE_MONTH",
+            "commitmentAmount": 1000,
+            "savingsPercent": 57
+          },
+          "preemptibleInstances": {
+            "enableForBatchJobs": true,
+            "maxPercentage": 50,
+            "enableAutomaticReplacement": true
+          },
+          "sustainedUseDiscounts": {
+            "enableForLongRunningVMs": true,
+            "discountThreshold": 25,
+            "automaticApplication": true
+          },
+          "rightSizing": {
+            "enableRecommendations": true,
+            "recommendationFrequency": "DAILY",
+            "cpuUtilizationThreshold": 50,
+            "memoryUtilizationThreshold": 60
+          },
+          "storageOptimization": {
+            "enableNearlineStorage": true,
+            "nearlineTransitionDays": 30,
+            "enableColdlineStorage": true,
+            "coldlineTransitionDays": 90,
+            "enableArchivedStorage": true,
+            "archivedTransitionDays": 365
+          },
+          "networkOptimization": {
+            "enableCloudCDN": true,
+            "enableCloudInterconnect": false,
+            "enableVPCFlowLogs": false,
+            "flowLogsSamplingRate": 0.1
+          },
+          "monitoring": {
+            "enableBillingExport": true,
+            "billingExportDataset": "billing_dataset",
+            "enableCostAnalytics": true,
+            "enableRecommendationsEngine": true
+          }
+        }
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gcp-vm-sizing-config
+      namespace: cost-optimization
+    data:
+      gcp-vm-sizing-strategy.yaml: |
+        # Google Cloud VM Sizing Strategy
+        sizingRecommendations:
+          development:
+            - machineType: "e2-micro"
+              cpu: 2
+              memory: "1 GiB"
+              storage: "10 GiB SSD"
+              purpose: "Lightweight development"
+              costOptimization: "Preemptible instances allowed"
+            - machineType: "e2-small"
+              cpu: 2
+              memory: "2 GiB"
+              storage: "20 GiB SSD"
+              purpose: "Standard development"
+              costOptimization: "Preemptible instances allowed"
+          staging:
+            - machineType: "e2-medium"
+              cpu: 2
+              memory: "4 GiB"
+              storage: "40 GiB SSD"
+              purpose: "Staging environment"
+              costOptimization: "Committed use discounts possible"
+          production:
+            - machineType: "e2-standard-2"
+              cpu: 2
+              memory: "8 GiB"
+              storage: "80 GiB SSD"
+              purpose: "Standard production"
+              costOptimization: "Committed use discounts recommended"
+            - machineType: "e2-standard-4"
+              cpu: 4
+              memory: "16 GiB"
+              storage: "160 GiB SSD"
+              purpose: "High-performance production"
+              costOptimization: "Committed use discounts required"
+        preemptibleRecommendations:
+          batchProcessing:
+            - machineType: "e2-standard-2"
+              cpu: 2
+              memory: "8 GiB"
+              maxHourlyPrice: 0.05
+              purpose: "Batch processing workloads"
+          development:
+            - machineType: "e2-small"
+              cpu: 2
+              memory: "2 GiB"
+              maxHourlyPrice: 0.02
+              purpose: "Development environments"
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gcp-storage-cost-config
+      namespace: cost-optimization
+    data:
+      gcp-storage-cost-optimization.yaml: |
+        # Google Cloud Storage Cost Optimization
+        storageOptimization:
+          storageClasses:
+            multiRegional:
+              purpose: "Frequently accessed data across multiple regions"
+              availability: "99.95%"
+              durability: "99.999999999%"
+              cost: "Highest"
+              recommendation: "For frequently accessed production data"
+            regional:
+              purpose: "Frequently accessed data in single region"
+              availability: "99.9%"
+              durability: "99.999999999%"
+              cost: "High"
+              recommendation: "For primary application data"
+            nearline:
+              purpose: "Infrequently accessed data"
+              availability: "99.9%"
+              durability: "99.999999999%"
+              retrievalFee: "Yes"
+              cost: "Medium"
+              transitionPeriod: "30 days"
+              recommendation: "For data accessed less than once per month"
+            coldline:
+              purpose: "Rarely accessed data"
+              availability: "99.5%"
+              durability: "99.999999999%"
+              retrievalFee: "Yes"
+              cost: "Low"
+              transitionPeriod: "90 days"
+              retrievalTime: "Minutes"
+              recommendation: "For backups and archives"
+            archived:
+              purpose: "Seldom accessed data"
+              availability: "99%"
+              durability: "99.999999999%"
+              retrievalFee: "Yes"
+              cost: "Lowest"
+              transitionPeriod: "365 days"
+              retrievalTime: "Hours"
+              recommendation: "For long-term archival"
+          lifecycleManagement:
+            rules:
+              - name: "transition-to-nearline-after-30-days"
+                condition:
+                  age: 30
+                  matchesStorageClass: ["STANDARD"]
+                action:
+                  type: "SetStorageClass"
+                  storageClass: "NEARLINE"
+              - name: "transition-to-coldline-after-90-days"
+                condition:
+                  age: 90
+                  matchesStorageClass: ["NEARLINE"]
+                action:
+                  type: "SetStorageClass"
+                  storageClass: "COLDLINE"
+              - name: "delete-after-730-days"
+                condition:
+                  age: 730
+                  matchesStorageClass: ["COLDLINE"]
+                action:
+                  type: "Delete"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-cost-optimization-config
+  namespace: todo-app
+data:
+  # Oracle Cloud cost optimization configuration
+  oci-cost-optimization.yaml: |
+    # Oracle Cloud Infrastructure Cost Optimization Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-cost-optimization-config
+      namespace: cost-optimization
+    data:
+      oci-cost-config.json: |
+        {
+          "tenancyId": "ocid1.tenancy.oc1..aaaaaaa...",
+          "compartmentId": "ocid1.compartment.oc1..aaaaaaa...",
+          "region": "us-phoenix-1",
+          "costManagement": {
+            "enableCostTracking": true,
+            "budgetAmount": 1000,
+            "alertThreshold": 80,
+            "reportingFrequency": "MONTHLY",
+            "costTrackingTags": {
+              "environment": ["dev", "staging", "prod"],
+              "team": ["engineering", "qa", "ops"],
+              "project": ["todo-app"]
+            }
+          },
+          "reservedCapacity": {
+            "enableForCompute": true,
+            "reservationType": "COMPUTE_CAPACITY",
+            "reservationTerm": "ONE_YEAR",
+            "reservationQuantity": 5,
+            "savingsPercent": 50
+          },
+          "flexibleInstances": {
+            "enableForVariableWorkloads": true,
+            "maxOcpuCount": 16,
+            "memoryPerOcpuRatio": "1:1 to 1:128"
+          },
+          "spotInstances": {
+            "enableForBatchJobs": true,
+            "maxBidPrice": 0.05,
+            "interruptible": true,
+            "terminationTime": "ShortLived"
+          },
+          "autoscaling": {
+            "enableForVariableLoad": true,
+            "minInstanceCount": 1,
+            "maxInstanceCount": 10,
+            "scaleUpThreshold": 75,
+            "scaleDownThreshold": 25
+          },
+          "storageOptimization": {
+            "enableArchiveStorage": true,
+            "archiveStorageThresholdDays": 90,
+            "enableObjectLifecyclePolicy": true,
+            "lifecyclePolicyExecutionFrequency": "DAILY"
+          },
+          "networkOptimization": {
+            "enableFastConnect": false,
+            "fastConnectBandwidth": "1 Gbps",
+            "enableVCNFlowLogs": false,
+            "flowLogsInterval": "10_MIN"
+          },
+          "monitoring": {
+            "enableCostAnalysis": true,
+            "enableUsageReports": true,
+            "enableRecommendations": true,
+            "recommendationCategories": ["Compute", "Storage", "Network"]
+          }
+        }
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-vm-sizing-config
+      namespace: cost-optimization
+    data:
+      oci-vm-sizing-strategy.yaml: |
+        # Oracle Cloud Infrastructure VM Sizing Strategy
+        sizingRecommendations:
+          development:
+            - shape: "VM.Standard.E2.1.Micro"
+              ocpus: 1
+              memory: "1 GiB"
+              storage: "50 GiB NVMe"
+              purpose: "Micro development instances"
+              costOptimization: "Always free eligible"
+            - shape: "VM.Standard2.1"
+              ocpus: 1
+              memory: "15 GiB"
+              storage: "50 GiB NVMe"
+              purpose: "Standard development"
+              costOptimization: "Reserved capacity possible"
+          staging:
+            - shape: "VM.Standard2.2"
+              ocpus: 2
+              memory: "30 GiB"
+              storage: "100 GiB NVMe"
+              purpose: "Staging environment"
+              costOptimization: "Reserved capacity possible"
+          production:
+            - shape: "VM.Standard2.4"
+              ocpus: 4
+              memory: "60 GiB"
+              storage: "200 GiB NVMe"
+              purpose: "Standard production"
+              costOptimization: "Reserved capacity recommended"
+            - shape: "VM.Standard2.8"
+              ocpus: 8
+              memory: "120 GiB"
+              storage: "400 GiB NVMe"
+              purpose: "High-performance production"
+              costOptimization: "Reserved capacity required"
+          flexible:
+            - shape: "VM.Standard.E3.Flex"
+              minOcpus: 1
+              maxOcpus: 32
+              minMemory: "1"
+              maxMemory: "512"
+              purpose: "Variable workloads"
+              costOptimization: "Pay for what you use"
+        spotInstanceRecommendations:
+          batchProcessing:
+            - shape: "VM.Standard2.2"
+              ocpus: 2
+              memory: "30 GiB"
+              maxBidPrice: 0.04
+              interruptionBehavior: "TERMINATE"
+              purpose: "Batch processing workloads"
+          development:
+            - shape: "VM.Standard2.1"
+              ocpus: 1
+              memory: "15 GiB"
+              maxBidPrice: 0.02
+              interruptionBehavior: "TERMIMATE"
+              purpose: "Development environments"
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-storage-cost-config
+      namespace: cost-optimization
+    data:
+      oci-storage-cost-optimization.yaml: |
+        # Oracle Cloud Infrastructure Storage Cost Optimization
+        storageOptimization:
+          storageTiers:
+            premium:
+              purpose: "Frequently accessed data"
+              performance: "Highest"
+              cost: "Highest"
+              redundancy: "Triple"
+              recommendation: "For active application data"
+            standard:
+              purpose: "Regular access data"
+              performance: "High"
+              cost: "High"
+              redundancy: "Triple"
+              recommendation: "For primary application data"
+            archive:
+              purpose: "Rarely accessed data"
+              performance: "Low"
+              cost: "Lowest"
+              retrievalTime: "Hours"
+              retrievalCost: "Additional fee"
+              recommendation: "For long-term archival"
+          objectLifecyclePolicy:
+            rules:
+              - name: "transition-to-archive-after-90-days"
+                isEnabled: true
+                action: "ARCHIVE"
+                timeAmount: 90
+                timeUnit: "DAYS"
+                prefix: "todo-app/backups/"
+              - name: "delete-after-365-days"
+                isEnabled: true
+                action: "DELETE"
+                timeAmount: 365
+                timeUnit: "DAYS"
+                prefix: "todo-app/temp/"
+              - name: "transition-to-infrequent-access-after-30-days"
+                isEnabled: true
+                action: "INFREQUENT_ACCESS"
+                timeAmount: 30
+                timeUnit: "DAYS"
+                prefix: "todo-app/logs/"
+          blockVolumeOptimization:
+            backupPolicy:
+              schedule:
+                - frequency: "DAILY"
+                  retention: 7
+                  type: "INCREMENTAL"
+                - frequency: "WEEKLY"
+                  retention: 4
+                  type: "FULL"
+              costOptimization:
+                enableIncrementalBackups: true
+                useObjectStorageForBackups: true
+                compression: "HIGH"
+                deduplication: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-cloud-cost-optimization-config
+  namespace: todo-app
+data:
+  # Multi-cloud cost optimization configuration
+  cost-optimization-strategy.md: |
+    # Multi-Cloud Cost Optimization Strategy
+
+    ## Overview
+    This document outlines the cost optimization strategy for the Todo AI system across multiple cloud providers.
+
+    ## Cost Optimization Principles
+
+    ### 1. Right-Sizing
+    - Continuously monitor resource utilization
+    - Right-size compute resources based on actual usage
+    - Use monitoring tools to identify over-provisioned resources
+    - Implement automated right-sizing recommendations
+
+    ### 2. Reserved Capacity
+    - Purchase reserved instances for steady-state workloads
+    - Evaluate commitment terms based on workload stability
+    - Monitor reservation utilization to maximize savings
+    - Plan reservation purchases based on growth projections
+
+    ### 3. Spot/Preemptible Instances
+    - Use spot/preemptible instances for fault-tolerant workloads
+    - Implement graceful handling of instance interruptions
+    - Monitor spot pricing to optimize bid strategies
+    - Use spot instances for batch processing and development
+
+    ### 4. Storage Tiering
+    - Implement intelligent data lifecycle management
+    - Move infrequently accessed data to lower-cost tiers
+    - Use archival storage for long-term retention
+    - Monitor access patterns to optimize tiering policies
+
+    ## Cost Monitoring and Alerting
+
+    ### Budget Management
+    - Set up budgets with alert thresholds
+    - Monitor spending against budgets regularly
+    - Implement cost allocation tags
+    - Track costs by team, project, and environment
+
+    ### Cost Analysis
+    - Analyze cost trends and patterns
+    - Identify cost anomalies and outliers
+    - Review cost optimization recommendations
+    - Measure cost optimization effectiveness
+
+    ## Cloud Provider Selection
+
+    ### Workload Placement
+    - Place workloads on the most cost-effective cloud provider
+    - Consider data egress costs in workload placement
+    - Evaluate performance vs. cost trade-offs
+    - Implement multi-cloud cost arbitrage
+
+    ## Automation
+
+    ### Cost Optimization Automation
+    - Automate resource scheduling for non-production environments
+    - Implement auto-scaling to match demand
+    - Automate resource cleanup for temporary resources
+    - Schedule automated cost optimization tasks
+
+    ## Cost Allocation
+
+    ### Tagging Strategy
+    - Implement consistent tagging across all resources
+    - Use tags for cost allocation and chargeback
+    - Enforce tagging policies through automation
+    - Monitor tagging compliance
+
+    ## Reporting
+
+    ### Cost Reporting
+    - Generate regular cost reports
+    - Provide cost visibility to stakeholders
+    - Track cost optimization initiatives
+    - Report on cost per business unit
+  cost-optimization-tools.yaml: |
+    # Cost Optimization Tools Configuration
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: cost-optimization-tools
+      namespace: cost-optimization
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: cost-optimization-tools
+      template:
+        metadata:
+          labels:
+            app: cost-optimization-tools
+        spec:
+          containers:
+          - name: cost-analyzer
+            image: kubecost/cost-model:latest
+            ports:
+            - containerPort: 9090
+            env:
+            - name: PROMETHEUS_SERVER_ENDPOINT
+              value: "http://prometheus:9090"
+            - name: CLUSTER_NAME
+              value: "todo-app-cluster"
+            volumeMounts:
+            - name: config-volume
+              mountPath: /etc/kubecost
+          volumes:
+          - name: config-volume
+            configMap:
+              name: cost-optimization-config
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: cost-optimization-service
+      namespace: cost-optimization
+    spec:
+      selector:
+        app: cost-optimization-tools
+      ports:
+      - protocol: TCP
+        port: 9090
+        targetPort: 9090
+      type: ClusterIP
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: cost-optimization-ingress
+      namespace: cost-optimization
+      annotations:
+        kubernetes.io/ingress.class: "nginx"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      tls:
+      - hosts:
+        - cost.todo-app.example.com
+        secretName: cost-tls
+      rules:
+      - host: cost.todo-app.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: cost-optimization-service
+                port:
+                  number: 9090
+  cost-optimization-policies.yaml: |
+    # Cost Optimization Policies
+    apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: production-pdb
+      namespace: todo-app
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          environment: production
+    ---
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: resource-cleanup-job
+      namespace: cost-optimization
+    spec:
+      schedule: "0 2 * * *"
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: cost-optimization-sa
+              containers:
+              - name: resource-cleanup
+                image: bitnami/kubectl:latest
+                command:
+                - /bin/bash
+                - -c
+                - |
+                  # Clean up unused resources
+                  echo "Cleaning up unused resources..."
+                  
+                  # Delete pods in Succeeded state older than 1 hour
+                  kubectl delete pods --field-selector=status.phase=Succeeded --namespace=todo-app --timestamp-threshold=1h
+                  
+                  # Delete pods in Failed state older than 1 hour
+                  kubectl delete pods --field-selector=status.phase=Failed --namespace=todo-app --timestamp-threshold=1h
+                  
+                  # Clean up unused configmaps older than 7 days
+                  kubectl get configmaps --namespace=todo-app -o json | jq -r '.items[] | select(.metadata.creationTimestamp < "'$(date -d '7 days ago' -u +%Y-%m-%dT%H:%M:%SZ)'") | .metadata.name' | xargs -r kubectl delete configmaps --namespace=todo-app
+                  
+                  # Clean up unused secrets older than 30 days
+                  kubectl get secrets --namespace=todo-app -o json | jq -r '.items[] | select(.metadata.creationTimestamp < "'$(date -d '30 days ago' -u +%Y-%m-%dT%H:%M:%SZ)'") | select(.type != "kubernetes.io/service-account-token") | .metadata.name' | xargs -r kubectl delete secrets --namespace=todo-app
+                  
+                  echo "Resource cleanup completed"
+              restartPolicy: OnFailure
+    ---
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: cost-analysis-job
+      namespace: cost-optimization
+    spec:
+      schedule: "0 1 * * 0"
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: cost-optimization-sa
+              containers:
+              - name: cost-analysis
+                image: python:3.9-slim
+                command:
+                - /bin/bash
+                - -c
+                - |
+                  # Install required packages
+                  pip install kubernetes requests
+                  
+                  # Run cost analysis
+                  cat << 'EOF' > /tmp/cost_analysis.py
+                  import kubernetes
+                  import requests
+                  import json
+                  from datetime import datetime, timedelta
+                  
+                  def analyze_cost_optimization():
+                      # Initialize Kubernetes client
+                      kubernetes.config.load_incluster_config()
+                      v1 = kubernetes.client.CoreV1Api()
+                      
+                      # Get all pods
+                      pods = v1.list_pod_for_all_namespaces(watch=False)
+                      
+                      # Analyze resource requests vs limits
+                      inefficient_pods = []
+                      for pod in pods.items:
+                          for container in pod.spec.containers:
+                              if container.resources.requests and container.resources.limits:
+                                  cpu_request = container.resources.requests.get('cpu', '0')
+                                  cpu_limit = container.resources.limits.get('cpu', '0')
+                                  
+                                  # Convert to comparable units (assuming millicores)
+                                  cpu_request_millicores = parse_cpu(cpu_request)
+                                  cpu_limit_millicores = parse_cpu(cpu_limit)
+                                  
+                                  if cpu_limit_millicores > 0 and cpu_request_millicores > 0:
+                                      ratio = cpu_request_millicores / cpu_limit_millicores
+                                      if ratio < 0.5:  # Less than 50% of limit requested
+                                          inefficient_pods.append({
+                                              'namespace': pod.metadata.namespace,
+                                              'pod': pod.metadata.name,
+                                              'container': container.name,
+                                              'cpu_request': cpu_request,
+                                              'cpu_limit': cpu_limit,
+                                              'ratio': ratio
+                                          })
+                      
+                      # Print findings
+                      print(f"Found {len(inefficient_pods)} potentially inefficient pods:")
+                      for pod in inefficient_pods:
+                          print(f"  {pod['namespace']}/{pod['pod']} - {pod['container']}: {pod['ratio']:.2%} of CPU limit used")
+                  
+                  def parse_cpu(cpu_str):
+                      if cpu_str.endswith('m'):
+                          return int(cpu_str[:-1])
+                      elif cpu_str.endswith('n'):
+                          return int(cpu_str[:-1]) / 1000000
+                      else:
+                          return int(cpu_str) * 1000
+                  
+                  if __name__ == "__main__":
+                      analyze_cost_optimization()
+                  EOF
+                  
+                  python /tmp/cost_analysis.py
+                volumeMounts:
+                - name: service-account-volume
+                  mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+                  readOnly: true
+              volumes:
+              - name: service-account-volume
+                projected:
+                  sources:
+                  - serviceAccountToken:
+                      path: token
+                      expirationSeconds: 3600
+                      audience: kubernetes.default.svc
+              restartPolicy: OnFailure

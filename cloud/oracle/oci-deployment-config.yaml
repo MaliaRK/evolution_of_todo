@@ -1,0 +1,498 @@
+# Oracle Cloud Deployment Configuration
+# Configuration for deploying the Todo AI system to Oracle Cloud Infrastructure
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-cluster-config
+  namespace: todo-app
+type: Opaque
+data:
+  # Oracle Cloud credentials for OKE
+  oci-user-id: <base64-encoded-user-id>
+  oci-tenancy-id: <base64-encoded-tenancy-id>
+  oci-private-key: <base64-encoded-private-key>
+  oci-fingerprint: <base64-encoded-fingerprint>
+  oci-region: <base64-encoded-region>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-infrastructure-config
+  namespace: todo-app
+data:
+  # OKE cluster configuration
+  cluster-config.json: |
+    {
+      "name": "todo-app-oke-cluster",
+      "description": "OKE cluster for Todo AI system",
+      "kubernetesVersion": "v1.24.1",
+      "vcnId": "ocid1.vcn.oc1.phx.aaaaaaaa...",
+      "serviceLbSubnetIds": [
+        "ocid1.subnet.oc1.phx.aaaaaaa...",
+        "ocid1.subnet.oc1.phx.aaaaaaa..."
+      ],
+      "nodesLbSubnetIds": [
+        "ocid1.subnet.oc1.phx.aaaaaaa...",
+        "ocid1.subnet.oc1.phx.aaaaaaa..."
+      ],
+      "kubernetesNetworkConfig": {
+        "podsCidr": "10.244.0.0/16",
+        "servicesCidr": "10.96.0.0/16",
+        "serviceDnsDomain": "cluster.local"
+      },
+      "options": {
+        "addOns": {
+          "isEnabledKubernetesDashboard": false,
+          "isEnabledTiller": false
+        },
+        "admissionControllerOptions": {
+          "isPodSecurityPolicyEnabled": false
+        },
+        "serviceLbConfig": {
+          "isApiEndpointConstrained": false,
+          "isWorkerNodeConstrained": false
+        }
+      },
+      "initialNodePool": {
+        "name": "todo-app-node-pool",
+        "kubernetesVersion": "v1.24.1",
+        "nodeShape": "VM.Standard2.4",
+        "initialNodeLabels": {
+          "name": "todo-app-node"
+        },
+        "sshPublicKey": "ssh-rsa AAAAB3NzaC1yc2E...",
+        "quantityPerSubnet": 3,
+        "subnetIds": [
+          "ocid1.subnet.oc1.phx.aaaaaaa...",
+          "ocid1.subnet.oc1.phx.aaaaaaa..."
+        ],
+        "nodeMetadata": {
+          "ssh_authorized_keys": "ssh-rsa AAAAB3NzaC1yc2E..."
+        },
+        "nodeSourceDetails": {
+          "sourceType": "IMAGE",
+          "imageId": "ocid1.image.oc1.phx.aaaaaaa...",
+          "bootVolumeSizeInGBs": 50
+        },
+        "nodePoolCyclingDetails": {
+          "nodePoolCyclingEnabled": true,
+          "nodePoolCycleTimeMinutes": 120
+        }
+      },
+      "imagePolicyConfig": {
+        "isPolicyEnabled": false
+      },
+      "endpointConfig": {
+        "isPublicIpEnabled": true,
+        "nsgIds": []
+      },
+      "isKubernetesDashboardEnabled": false,
+      "isTillerEnabled": false,
+      "admissionControllerOptions": {
+        "isPodSecurityPolicyEnabled": false
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-storage-config
+  namespace: todo-app
+data:
+  # Oracle Cloud storage configuration for OKE
+  oci-block-storage-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: oci-fast-ssd
+    provisioner: oracle.com/oci
+    parameters:
+      csi.storage.k8s.io/fstype: ext4
+      availabilityDomain: PHX-AD-1
+      compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+  oci-file-storage-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: oci-file-storage
+    provisioner: filestore.csi.oraclecloud.com
+    parameters:
+      packageQuotaGb: "1024"
+      mountTargetId: ocid1.mounttarget.oc1.phx.aaaaaaa...
+      compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-monitoring-config
+  namespace: todo-app
+data:
+  # OCI monitoring configuration
+  oracle-cloud-monitoring.yaml: |
+    # Oracle Cloud Infrastructure monitoring configuration
+    clusterName: todo-app-oke-cluster
+    tenancyId: ocid1.tenancy.oc1..aaaaaaa...
+    compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    region: us-phoenix-1
+    
+    monitoring:
+      enabled: true
+      config:
+        metrics:
+          enabled: true
+          retention: "30d"
+          namespaces:
+          - "oci_kubernetes_cluster"
+          - "oci_compute"
+          - "oci_networking"
+        logs:
+          enabled: true
+          retention: "90d"
+          logGroups:
+          - name: "todo-app-cluster-logs"
+            retention: 30
+          - name: "todo-app-node-logs"
+            retention: 30
+        events:
+          enabled: true
+          retention: "90d"
+          
+    # Oracle Management Agent configuration
+    managementAgent:
+      enabled: true
+      pluginConfigs:
+      - name: "OKE"
+        config:
+          clusterId: ocid1.cluster.oc1.phx.aaaaaaa...
+      - name: "OKE_MONITORING"
+        config:
+          clusterId: ocid1.cluster.oc1.phx.aaaaaaa...
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-ingress-config
+  namespace: todo-app
+data:
+  # OCI ingress configuration
+  oci-ingress-config.yaml: |
+    # Oracle Cloud Load Balancer configuration for OKE
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-ingress
+      annotations:
+        # Oracle Cloud Load Balancer annotations
+        service.beta.kubernetes.io/oci-load-balancer-internal: "false"
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+        service.beta.kubernetes.io/oci-load-balancer-security-list-management-mode: "Oracle-managed"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.oke.example.com"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      ingressClassName: "oci"
+      tls:
+      - secretName: todo-app-tls
+        hosts:
+        - todo-app.oke.example.com
+      rules:
+      - host: todo-app.oke.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-security-config
+  namespace: todo-app
+data:
+  # OCI security configuration
+  oracle-cloud-security-config.yaml: |
+    # Oracle Cloud Infrastructure security configuration
+    clusterName: todo-app-oke-cluster
+    tenancyId: ocid1.tenancy.oc1..aaaaaaa...
+    compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    region: us-phoenix-1
+    
+    security:
+      enabled: true
+      config:
+        # Vault configuration
+        vault:
+          enabled: true
+          vaultId: ocid1.vault.oc1.phx.aaaaaaa...
+          keyId: ocid1.key.oc1.phx.aaaaaaa...
+          
+        # Key Management configuration
+        keyManagement:
+          enabled: true
+          masterEncryptionKeyId: ocid1.key.oc1.phx.aaaaaaa...
+          
+        # Container Registry security
+        containerRegistry:
+          enabled: true
+          repository: "todo-app-repo"
+          securityPolicy:
+            scanOnPush: true
+            vulnerabilitySeverityThreshold: "HIGH"
+            
+        # Network security
+        networkSecurity:
+          enabled: true
+          securityLists:
+          - name: "todo-app-security-list"
+            egressRules:
+            - protocol: "6"
+              destination: "0.0.0.0/0"
+              description: "Allow all egress"
+            ingressRules:
+            - protocol: "6"
+              source: "0.0.0.0/0"
+              tcpOptions:
+                destinationPortRange:
+                  min: 443
+                  max: 443
+              description: "HTTPS"
+            - protocol: "6"
+              source: "0.0.0.0/0"
+              tcpOptions:
+                destinationPortRange:
+                  min: 80
+                  max: 80
+              description: "HTTP"
+              
+        # Identity and Access Management
+        iam:
+          enabled: true
+          policies:
+          - name: "todo-app-policy"
+            description: "Policy for Todo App cluster"
+            statements:
+            - "Allow group todo-app-developers to read all-resources in compartment todo-app-compartment"
+            - "Allow group todo-app-operators to manage instances in compartment todo-app-compartment"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-network-config
+  namespace: todo-app
+data:
+  # OCI network configuration
+  oci-network-config.yaml: |
+    # Oracle Cloud Infrastructure network configuration
+    vcnId: ocid1.vcn.oc1.phx.aaaaaaa...
+    compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    
+    network:
+      enabled: true
+      config:
+        # VCN configuration
+        vcn:
+          name: "todo-app-vcn"
+          cidrBlock: "10.0.0.0/16"
+          dnsLabel: "todoappvcn"
+          
+        # Subnet configuration
+        subnets:
+        - name: "todo-app-public-subnet-1"
+          cidrBlock: "10.0.1.0/24"
+          dnsLabel: "publicsubnet1"
+          subnetType: "PUBLIC"
+          availabilityDomain: "PHX-AD-1"
+        - name: "todo-app-public-subnet-2"
+          cidrBlock: "10.0.2.0/24"
+          dnsLabel: "publicsubnet2"
+          subnetType: "PUBLIC"
+          availabilityDomain: "PHX-AD-2"
+        - name: "todo-app-private-subnet-1"
+          cidrBlock: "10.0.10.0/24"
+          dnsLabel: "privatesubnet1"
+          subnetType: "PRIVATE"
+          availabilityDomain: "PHX-AD-1"
+        - name: "todo-app-private-subnet-2"
+          cidrBlock: "10.0.20.0/24"
+          dnsLabel: "privatesubnet2"
+          subnetType: "PRIVATE"
+          availabilityDomain: "PHX-AD-2"
+          
+        # Security Lists
+        securityLists:
+        - name: "todo-app-security-list"
+          egressSecurityRules:
+          - destination: "0.0.0.0/0"
+            protocol: "all"
+            description: "Allow all egress"
+          ingressSecurityRules:
+          - source: "0.0.0.0/0"
+            protocol: "6"
+            description: "HTTP"
+            tcpOptions:
+              destinationPortRange:
+                min: 80
+                max: 80
+          - source: "0.0.0.0/0"
+            protocol: "6"
+            description: "HTTPS"
+            tcpOptions:
+              destinationPortRange:
+                min: 443
+                max: 443
+          - source: "10.0.0.0/16"
+            protocol: "all"
+            description: "Internal traffic"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-helm-values
+  namespace: todo-app
+data:
+  # OCI-specific Helm values
+  oci-values.yaml: |
+    # OCI-specific configurations
+    replicaCount: 3
+    
+    image:
+      repository: todo-app
+      pullPolicy: Always
+      tag: "latest"
+    
+    imagePullSecrets: []
+    nameOverride: ""
+    fullnameOverride: "todo-app-oci"
+    
+    serviceAccount:
+      create: true
+      annotations:
+        oci.oraclecloud.com/tenancy: "ocid1.tenancy.oc1..aaaaaaa..."
+        oci.oraclecloud.com/compartment: "ocid1.compartment.oc1..aaaaaaa..."
+      name: todo-app-oci-sa
+    
+    podAnnotations: {}
+    
+    podSecurityContext:
+      fsGroup: 2000
+    
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+    
+    service:
+      type: LoadBalancer
+      port: 80
+    
+    ingress:
+      enabled: true
+      className: "oci"
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-internal: "false"
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.oke.example.com"
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - host: todo-app.oke.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: todo-app-tls
+          hosts:
+            - todo-app.oke.example.com
+    
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
+    
+    nodeSelector: {}
+    
+    tolerations: []
+    
+    affinity: {}
+    
+    # OCI-specific configurations
+    oci:
+      enabled: true
+      vault:
+        enabled: true
+        vaultId: ocid1.vault.oc1.phx.aaaaaaa...
+        keyId: ocid1.key.oc1.phx.aaaaaaa...
+      containerRegistry:
+        enabled: true
+        region: us-phoenix-1
+        namespace: todoapp
+      loadBalancer:
+        enabled: true
+        shape: "flexible"
+        flexMin: 10
+        flexMax: 100
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: todo-app-oci-sa
+  namespace: todo-app
+  annotations:
+    oci.oraclecloud.com/tenancy: "ocid1.tenancy.oc1..aaaaaaa..."
+    oci.oraclecloud.com/compartment: "ocid1.compartment.oc1..aaaaaaa..."
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: todo-app-oci-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["core.oracle.com"]
+  resources: ["virtualservices", "virtualdeployments"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: todo-app-oci-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: todo-app-oci-sa
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: todo-app-oci-role
+  apiGroup: rbac.authorization.k8s.io

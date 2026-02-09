@@ -1,0 +1,113 @@
+# Docker Build and Push Configuration
+# This configuration defines how Docker images are built and pushed to registry
+
+# Build arguments
+BUILD_ARGS:
+  # Base image for the application
+  BASE_IMAGE: python:3.11-slim
+  # Working directory inside the container
+  WORKDIR: /app
+  # Port the application listens on
+  PORT: 8000
+
+# Dockerfile stages
+DOCKERFILE_STAGES:
+  # Build stage - installs dependencies and builds the application
+  BUILD_STAGE:
+    FROM: ${BASE_IMAGE}
+    STEPS:
+      - RUN: apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+      - WORKDIR: ${WORKDIR}
+      - COPY: requirements.txt .
+      - RUN: pip install --no-cache-dir -r requirements.txt
+      - COPY: . .
+  
+  # Production stage - final optimized image
+  PRODUCTION_STAGE:
+    FROM: ${BASE_IMAGE}
+    STEPS:
+      - RUN: apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+      - WORKDIR: ${WORKDIR}
+      - COPY: --from=builder /app/requirements.txt .
+      - RUN: pip install --no-cache-dir --user -r requirements.txt
+      - COPY: --from=builder /app/ .
+      - EXPOSE: ${PORT}
+      - CMD: ["python", "-m", "backend.src.main"]
+
+# Multi-platform build configuration
+PLATFORMS:
+  - linux/amd64
+  - linux/arm64
+
+# Image tagging strategy
+TAGGING_STRATEGY:
+  # Git-based tags
+  GIT_TAGS:
+    - latest
+    - ${GIT_COMMIT_SHA}
+    - ${GIT_BRANCH_NAME}
+    - ${GIT_TAG_NAME}
+  
+  # Semantic version tags (when applicable)
+  SEMVER_TAGS:
+    - ${SEMVER_MAJOR}.${SEMVER_MINOR}.${SEMVER_PATCH}
+    - ${SEMVER_MAJOR}.${SEMVER_MINOR}
+    - ${SEMVER_MAJOR}
+
+# Security scanning configuration
+SECURITY_SCANNING:
+  # Tools to use for scanning
+  SCANNERS:
+    - trivy
+    - snyk
+    - docker scout
+  
+  # Scan targets
+  SCAN_TARGETS:
+    - filesystem
+    - sbom
+    - secrets
+  
+  # Fail build on critical vulnerabilities
+  FAIL_ON_CRITICAL: true
+  FAIL_ON_HIGH: false
+
+# Optimization settings
+OPTIMIZATION:
+  # Use multi-stage builds to reduce image size
+  MULTI_STAGE_BUILD: true
+  
+  # Use .dockerignore to exclude unnecessary files
+  USE_DOCKERIGNORE: true
+  
+  # Squash layers to reduce image size (where supported)
+  SQUASH_LAYERS: true
+
+# Registry configuration
+REGISTRY_CONFIG:
+  # Target registries
+  TARGET_REGISTRIES:
+    - GHCR: ghcr.io/${GITHUB_REPOSITORY}
+    - DOCKER_HUB: docker.io/${DOCKER_HUB_USERNAME}/${IMAGE_NAME}
+    - ECR: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}
+  
+  # Authentication
+  AUTH_METHODS:
+    - GITHUB_TOKEN: for GHCR
+    - DOCKER_HUB_TOKEN: for Docker Hub
+    - AWS_ACCESS_KEY: for ECR
+
+# Build caching configuration
+CACHE_CONFIG:
+  # Use build cache to speed up builds
+  ENABLE_CACHE: true
+  
+  # Cache sources
+  CACHE_FROM:
+    - type=gha
+    - type=registry,ref=${TARGET_REGISTRY}/${IMAGE_NAME}:latest
+  
+  # Cache destinations
+  CACHE_TO:
+    - type=gha
+    - type=inline

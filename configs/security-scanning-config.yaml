@@ -1,0 +1,154 @@
+# Security Scanning Configuration
+# Configuration for security scanning in the CI/CD pipeline
+
+# Static Analysis Tools
+STATIC_ANALYSIS:
+  bandit:
+    # Python security scanner
+    enabled: true
+    config_file: .bandit
+    severity_level: high
+    confidence_level: medium
+    output_format: json
+  
+  semgrep:
+    # Multi-language static analysis
+    enabled: true
+    config: p/python
+    output_format: sarif
+  
+  sonarqube:
+    # Comprehensive code quality and security
+    enabled: false  # Enable in enterprise environments
+    project_key: todo-app
+    organization: todo-org
+
+# Container Security Scanning
+CONTAINER_SECURITY:
+  trivy:
+    # Vulnerability scanner for containers
+    enabled: true
+    scan_type: fs
+    format: sarif
+    output: trivy-results.sarif
+    severity: CRITICAL,HIGH,MEDIUM
+    ignore_unfixed: true
+  
+  docker_scan:
+    # Docker's built-in security scanning
+    enabled: true
+    platform: linux/amd64
+    file: backend/Dockerfile
+  
+  snyk:
+    # Container and dependency security
+    enabled: true
+    org: todo-org
+    project: todo-app
+
+# Dependency Scanning
+DEPENDENCY_SCANNING:
+  pip_audit:
+    # Python dependency vulnerability scanner
+    enabled: true
+    strict: true
+    format: json
+  
+  osv_scanner:
+    # Open Source Vulnerabilities scanner
+    enabled: true
+    docker: false  # Set to true if scanning container images
+  
+  license_scanner:
+    # License compliance checking
+    enabled: true
+    allow_licenses:
+      - MIT
+      - BSD-3-Clause
+      - Apache-2.0
+    deny_licenses:
+      - GPL-2.0
+      - GPL-3.0
+
+# Secrets Detection
+SECRETS_DETECTION:
+  gitleaks:
+    # Detect secrets in code
+    enabled: true
+    config: .gitleaks.toml
+    redact: true
+    exit_code: 1
+  
+  detect_secrets:
+    # Yelp's secrets detection
+    enabled: false  # Using gitleaks instead
+    plugins:
+      - KeywordDetector
+      - Base64HighEntropyString
+      - HexHighEntropyString
+
+# Infrastructure as Code Scanning
+IAC_SCANNING:
+  checkov:
+    # Terraform, CloudFormation, Kubernetes security
+    enabled: true
+    framework: kubernetes
+    output: sarif
+    compact: true
+  
+  kubesec:
+    # Kubernetes security scanner
+    enabled: true
+    format: json
+  
+  tfsec:
+    # Terraform security scanner
+    enabled: false  # Only if using Terraform
+
+# Security Policies
+SECURITY_POLICIES:
+  # Thresholds for failing builds
+  CRITICAL_THRESHOLD: 0
+  HIGH_THRESHOLD: 5
+  MEDIUM_THRESHOLD: 10
+  
+  # Required scans for passing build
+  REQUIRED_SCANS:
+    - trivy
+    - bandit
+    - dependency_check
+  
+  # Security gate configuration
+  SECURITY_GATE:
+    fail_on_any_critical: true
+    fail_on_high_count_exceeds: 5
+    warn_on_medium_count_exceeds: 10
+
+# Reporting
+REPORTING:
+  # SARIF format for integration with GitHub Code Scanning
+  sarif_output: true
+  
+  # Security dashboard integration
+  dashboard_url: https://security-dashboard.todo-app.com
+  
+  # Notification settings
+  notifications:
+    on_failure: true
+    recipients:
+      - security-team@todo-app.com
+      - devops@todo-app.com
+
+# Compliance
+COMPLIANCE:
+  # Standards to comply with
+  standards:
+    - OWASP Top 10
+    - PCI DSS
+    - GDPR
+    - SOC 2
+  
+  # Compliance scanning schedule
+  schedule:
+    daily: ["trivy", "dependency_scan"]
+    weekly: ["comprehensive_security_audit"]

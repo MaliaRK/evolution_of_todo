@@ -1,0 +1,822 @@
+# Chaos Engineering Configuration
+# Configuration for chaos engineering and resilience testing
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-experiments
+  namespace: todo-app
+data:
+  # Chaos experiments for Todo AI system
+  network-chaos.yaml: |
+    # Network chaos experiment
+    apiVersion: litmuschaos.io/v1alpha1
+    kind: ChaosEngine
+    metadata:
+      name: todo-app-network-chaos
+      namespace: todo-app
+    spec:
+      appinfo:
+        appns: todo-app
+        applabel: "app=todo-app"
+        appkind: deployment
+      engineState: active
+      chaosServiceAccount: litmus-admin
+      experiments:
+      - name: pod-network-loss
+        spec:
+          components:
+            env:
+            # Network packet loss percentage
+            - name: NETWORK_PACKET_LOSS_PERCENTAGE
+              value: '50'
+            # Duration of chaos in seconds
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Network interface
+            - name: NETWORK_INTERFACE
+              value: 'eth0'
+            # Chaos interval
+            - name: CHAOS_INTERVAL
+              value: '10'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+  pod-chaos.yaml: |
+    # Pod chaos experiment
+    apiVersion: litmuschaos.io/v1alpha1
+    kind: ChaosEngine
+    metadata:
+      name: todo-app-pod-chaos
+      namespace: todo-app
+    spec:
+      appinfo:
+        appns: todo-app
+        applabel: "app=todo-app"
+        appkind: deployment
+      engineState: active
+      chaosServiceAccount: litmus-admin
+      experiments:
+      - name: pod-delete
+        spec:
+          components:
+            env:
+            # Number of pods to delete
+            - name: CHAOS_INTERVAL
+              value: '10'
+            # Total chaos duration
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Force deletion
+            - name: FORCE
+              value: 'true'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+  stress-chaos.yaml: |
+    # Stress chaos experiment
+    apiVersion: litmuschaos.io/v1alpha1
+    kind: ChaosEngine
+    metadata:
+      name: todo-app-stress-chaos
+      namespace: todo-app
+    spec:
+      appinfo:
+        appns: todo-app
+        applabel: "app=todo-app"
+        appkind: deployment
+      engineState: active
+      chaosServiceAccount: litmus-admin
+      experiments:
+      - name: pod-cpu-hog
+        spec:
+          components:
+            env:
+            # CPU percentage to consume
+            - name: CPU_CORES
+              value: '1'
+            # Duration of chaos in seconds
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Chaos interval
+            - name: CHAOS_INTERVAL
+              value: '10'
+            # Stress-ng arguments
+            - name: STRESS_NG_ARGS
+              value: '--cpu 1 --timeout 60s'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+      - name: pod-memory-hog
+        spec:
+          components:
+            env:
+            # Memory to consume
+            - name: MEMORY_CONSUMPTION_PERCENTAGE
+              value: '80'
+            # Duration of chaos in seconds
+            - name: TOTAL_CHAOS_DURATION
+              value: '60'
+            # Chaos interval
+            - name: CHAOS_INTERVAL
+              value: '10'
+            # Stress-ng arguments
+            - name: STRESS_NG_ARGS
+              value: '--vm 1 --vm-bytes 500M --timeout 60s'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+  dapr-chaos.yaml: |
+    # Dapr chaos experiment
+    apiVersion: litmuschaos.io/v1alpha1
+    kind: ChaosEngine
+    metadata:
+      name: dapr-chaos
+      namespace: dapr-system
+    spec:
+      appinfo:
+        appns: dapr-system
+        applabel: "app=dapr-sidecar-injector"
+        appkind: deployment
+      engineState: active
+      chaosServiceAccount: litmus-admin
+      experiments:
+      - name: pod-delete
+        spec:
+          components:
+            env:
+            # Chaos interval
+            - name: CHAOS_INTERVAL
+              value: '15'
+            # Total chaos duration
+            - name: TOTAL_CHAOS_DURATION
+              value: '90'
+            # Force deletion
+            - name: FORCE
+              value: 'false'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+  kafka-chaos.yaml: |
+    # Kafka chaos experiment
+    apiVersion: litmuschaos.io/v1alpha1
+    kind: ChaosEngine
+    metadata:
+      name: kafka-chaos
+      namespace: kafka
+    spec:
+      appinfo:
+        appns: kafka
+        applabel: "app=kafka"
+        appkind: statefulset
+      engineState: active
+      chaosServiceAccount: litmus-admin
+      experiments:
+      - name: pod-delete
+        spec:
+          components:
+            env:
+            # Chaos interval
+            - name: CHAOS_INTERVAL
+              value: '20'
+            # Total chaos duration
+            - name: TOTAL_CHAOS_DURATION
+              value: '120'
+            # Force deletion
+            - name: FORCE
+              value: 'false'
+            # Ramp time
+            - name: RAMP_TIME
+              value: '30'
+  chaos-schedule.yaml: |
+    # Scheduled chaos experiments
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: weekly-chaos-experiment
+      namespace: todo-app
+    spec:
+      schedule: "0 2 * * 1"  # Every Monday at 2 AM
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: litmus-admin
+              containers:
+              - name: chaos-runner
+                image: litmuschaos/chaos-runner:latest
+                env:
+                - name: CHAOS_NAMESPACE
+                  value: "todo-app"
+                - name: APP_LABEL
+                  value: "app=todo-app"
+                - name: CHAOS_KIND
+                  value: "deployment"
+                command:
+                - /bin/bash
+                - -c
+                - |
+                  # Run a series of chaos experiments
+                  echo "Starting weekly chaos experiment"
+                  
+                  # Apply network chaos
+                  kubectl apply -f /experiments/network-chaos.yaml
+                  sleep 120
+                  
+                  # Apply pod chaos
+                  kubectl apply -f /experiments/pod-chaos.yaml
+                  sleep 120
+                  
+                  # Apply stress chaos
+                  kubectl apply -f /experiments/stress-chaos.yaml
+                  sleep 120
+                  
+                  # Clean up
+                  kubectl delete chaosengine todo-app-network-chaos -n todo-app || true
+                  kubectl delete chaosengine todo-app-pod-chaos -n todo-app || true
+                  kubectl delete chaosengine todo-app-stress-chaos -n todo-app || true
+                  
+                  echo "Weekly chaos experiment completed"
+                volumeMounts:
+                - name: chaos-experiments
+                  mountPath: /experiments
+              volumes:
+              - name: chaos-experiments
+                configMap:
+                  name: chaos-experiments
+              restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-monitoring
+  namespace: todo-app
+data:
+  chaos-monitoring.yaml: |
+    # Monitoring configuration for chaos experiments
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: chaos-monitoring-config
+      namespace: monitoring
+    data:
+      prometheus-rules.yaml: |
+        groups:
+        - name: chaos-monitoring
+          rules:
+          - alert: HighErrorRateDuringChaos
+            expr: increase(todo_app_http_requests_total{status=~"5.."}[5m]) > 100
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate during chaos experiment"
+              description: "Error rate exceeded 100 requests in 5 minutes during chaos experiment"
+          
+          - alert: HighLatencyDuringChaos
+            expr: histogram_quantile(0.95, rate(todo_app_http_request_duration_seconds_bucket[5m])) > 2
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High latency during chaos experiment"
+              description: "95th percentile response time exceeded 2 seconds during chaos experiment"
+          
+          - alert: ServiceUnavailableDuringChaos
+            expr: up{job="todo-app"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service unavailable during chaos experiment"
+              description: "Todo app service became unavailable during chaos experiment"
+      grafana-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Chaos Engineering Dashboard",
+            "tags": ["chaos", "resilience", "monitoring"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Namespace",
+                  "multi": true,
+                  "name": "namespace",
+                  "options": [],
+                  "query": "label_values(kube_namespace_created, namespace)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Chaos Experiment Metrics",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 4,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "sum(rate(todo_app_http_requests_total{namespace=~\"$namespace\"}[5m])) by (status)",
+                    "interval": "",
+                    "legendFormat": "{{status}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "HTTP Request Rate During Chaos",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "decimals": 0,
+                    "format": "reqps",
+                    "label": "Requests per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "histogram_quantile(0.95, sum(rate(todo_app_http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+                    "interval": "",
+                    "legendFormat": "P95",
+                    "refId": "A"
+                  },
+                  {
+                    "expr": "histogram_quantile(0.99, sum(rate(todo_app_http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (le))",
+                    "interval": "",
+                    "legendFormat": "P99",
+                    "refId": "B"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "HTTP Request Duration During Chaos",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "s",
+                    "label": "Seconds",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 9
+                },
+                "id": 8,
+                "panels": [],
+                "title": "System Resource Chaos Impact",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 10,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+                    "interval": "",
+                    "legendFormat": "{{instance}} CPU Usage",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "CPU Usage During Chaos",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": "CPU %",
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 12,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+                    "interval": "",
+                    "legendFormat": "{{instance}} Memory Usage",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Memory Usage During Chaos",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": "Memory %",
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 27,
+            "style": "dark",
+            "tags": ["chaos", "resilience", "monitoring"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Chaos Engineering Dashboard",
+            "uid": "chaos-dashboard",
+            "version": 1
+          }
+        }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litmus-admin
+  namespace: todo-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: litmus-admin-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/exec", "pods/kill", "configmaps", "secrets", "services", "events", "nodes"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["litmuschaos.io"]
+  resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: litmus-admin-binding
+subjects:
+- kind: ServiceAccount
+  name: litmus-admin
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: litmus-admin-role
+  apiGroup: rbac.authorization.k8s.io

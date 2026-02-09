@@ -1,0 +1,229 @@
+# Application Metrics Endpoints Configuration
+# Configuration for metrics endpoints in the Todo AI system
+
+# Metrics endpoint specifications
+METRICS_ENDPOINTS:
+  todo_app_metrics:
+    path: /metrics
+    port: 8000
+    format: prometheus_text
+    security: 
+      enabled: false  # Enable in production with proper auth
+      auth_method: basic_auth_or_bearer_token
+    labels:
+      service: todo-app
+      version: ${APP_VERSION}
+      environment: ${ENVIRONMENT}
+  
+  dapr_metrics:
+    path: /metrics
+    port: 9090
+    format: prometheus_text
+    security:
+      enabled: true
+      auth_method: dapr_builtin_auth
+    labels:
+      service: dapr-sidecar
+      app_id: ${DAPR_APP_ID}
+      version: ${DAPR_RUNTIME_VERSION}
+  
+  kafka_metrics:
+    path: /metrics
+    port: 9999  # JMX exporter port
+    format: prometheus_text
+    security:
+      enabled: true
+      auth_method: basic_auth
+    labels:
+      service: kafka-broker
+      cluster: ${KAFKA_CLUSTER_NAME}
+      broker_id: ${KAFKA_BROKER_ID}
+
+# Metrics collection configuration
+METRICS_COLLECTION:
+  # Common metrics for all services
+  common_metrics:
+    - process_cpu_seconds_total
+    - process_resident_memory_bytes
+    - process_open_fds
+    - process_max_fds
+    - go_gc_duration_seconds
+    - go_goroutines
+    - go_info
+    - go_memstats_alloc_bytes
+    - go_threads
+  
+  # Application-specific metrics
+  todo_app_metrics:
+    counters:
+      - todo_app_http_requests_total
+      - todo_app_http_requests_by_method
+      - todo_app_http_requests_by_path
+      - todo_app_business_events_total
+      - todo_app_dapr_invocations_total
+    
+    gauges:
+      - todo_app_active_users
+      - todo_app_pending_tasks
+      - todo_app_system_health
+      - todo_app_cache_hit_ratio
+    
+    histograms:
+      - todo_app_http_request_duration_seconds
+      - todo_app_business_operation_duration_seconds
+      - todo_app_dapr_invocation_duration_seconds
+      - todo_app_db_query_duration_seconds
+  
+  # Dapr-specific metrics
+  dapr_metrics:
+    counters:
+      - dapr_grpc_completed_calls
+      - dapr_http_completed_requests
+      - dapr_state_get_operations_total
+      - dapr_state_set_operations_total
+      - dapr_pubsub_sent_messages_total
+      - dapr_bindings_received_events_total
+    
+    histograms:
+      - dapr_grpc_call_duration_seconds
+      - dapr_http_request_duration_seconds
+      - dapr_state_get_duration_seconds
+      - dapr_state_set_duration_seconds
+      - dapr_actor_reminder_fires_total
+      - dapr_actor_method_calls_total
+    
+    gauges:
+      - dapr_runtime_build_info
+      - dapr_sidecar_uptime
+      - dapr_state_store_size_bytes
+
+# Metrics labeling strategy
+METRICS_LABELING:
+  # Standard labels applied to all metrics
+  standard_labels:
+    service_name: ${SERVICE_NAME}
+    service_version: ${SERVICE_VERSION}
+    environment: ${ENVIRONMENT}
+    region: ${REGION}
+    zone: ${ZONE}
+    instance: ${HOSTNAME}
+    pod_name: ${K8S_POD_NAME}
+    namespace: ${K8S_NAMESPACE}
+    deployment: ${K8S_DEPLOYMENT_NAME}
+  
+  # Business-specific labels
+  business_labels:
+    user_tenant: ${TENANT_ID}
+    feature_flag: ${FEATURE_FLAG_STATE}
+    customer_segment: ${CUSTOMER_SEGMENT}
+  
+  # Dynamic labels (added at runtime)
+  dynamic_labels:
+    http_method: for HTTP metrics
+    http_status_code: for HTTP metrics
+    http_path: for HTTP metrics
+    operation_type: for business metrics
+    entity_type: for business metrics
+
+# Metrics filtering and sanitization
+METRICS_FILTERING:
+  # Exclude sensitive information from metrics
+  excluded_labels:
+    - user_id
+    - session_id
+    - auth_token
+    - credit_card_last_four
+  
+  # Sanitize label values
+  sanitization_rules:
+    remove_special_chars: true
+    truncate_long_values: true
+    max_label_value_length: 100
+  
+  # Sampling for high-cardinality metrics
+  sampling_config:
+    enabled: true
+    sample_rate: 0.1  # 10% sampling for high-cardinality metrics
+    cardinality_threshold: 1000  # Apply sampling above this threshold
+
+# Metrics aggregation and preprocessing
+METRICS_AGGREGATION:
+  # Aggregation rules for metrics
+  aggregation_rules:
+    temporal_aggregation:
+      window_sizes: [1m, 5m, 15m, 1h, 1d]
+      functions: [avg, sum, count, min, max, percentile_50, percentile_95, percentile_99]
+    
+    spatial_aggregation:
+      by_labels: [environment, service_name, region]
+      functions: [sum, avg, count]
+  
+  # Preprocessing before sending to collector
+  preprocessing:
+    normalization: true
+    unit_conversion: true
+    metric_rename: false  # Only if needed for compatibility
+
+# Metrics endpoint security
+METRICS_SECURITY:
+  # Security configuration for metrics endpoints
+  authentication:
+    enabled: true
+    methods:
+      - basic_auth: for internal monitoring
+      - bearer_token: for external monitoring
+      - mutual_tls: for production environments
+  
+  authorization:
+    enabled: true
+    allowed_cidrs:
+      - 10.0.0.0/8  # Internal network
+      - 172.16.0.0/12  # Internal network
+      - 192.168.0.0/16  # Internal network
+  
+  encryption:
+    enabled: true
+    tls_required: true
+    min_tls_version: "1.2"
+
+# Metrics endpoint health checks
+HEALTH_CHECKS:
+  # Health check configuration for metrics endpoints
+  availability_check:
+    endpoint: /metrics
+    method: GET
+    timeout: 5s
+    success_criteria: status_code_2xx
+  
+  performance_check:
+    endpoint: /metrics
+    method: GET
+    timeout: 10s
+    success_criteria: response_time_lt_1s
+  
+  content_check:
+    endpoint: /metrics
+    method: GET
+    timeout: 5s
+    success_criteria: contains_expected_metrics
+
+# Metrics endpoint monitoring
+MONITORING:
+  # Self-monitoring of metrics endpoints
+  endpoint_health:
+    enabled: true
+    check_interval: 30s
+    alert_on_failure: true
+  
+  metrics_collection_health:
+    enabled: true
+    check_interval: 60s
+    alert_on_failure: true
+  
+  metrics_quality:
+    enabled: true
+    check_interval: 300s
+    checks:
+      - metric_completeness
+      - metric_accuracy
+      - metric_timeliness

@@ -1,0 +1,1818 @@
+# Performance Benchmarking Suite
+# Comprehensive performance benchmarking for the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: performance-benchmark-suite
+  namespace: todo-app
+data:
+  benchmark-suite-config.yaml: |
+    # Performance Benchmark Suite Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: benchmark-suite-config
+      namespace: performance
+    data:
+      benchmark-suite.yaml: |
+        # Performance Benchmark Suite for Todo AI System
+        version: "1.0"
+        metadata:
+          name: "todo-ai-performance-benchmarks"
+          description: "Comprehensive performance benchmark suite for Todo AI system"
+          version: "1.0.0"
+          author: "Todo AI Performance Team"
+          created: "2026-02-09"
+        
+        # Benchmark Categories
+        benchmark_categories:
+          - name: "response-time"
+            description: "Measures response times for various operations"
+            priority: 1
+          
+          - name: "throughput"
+            description: "Measures requests per second capability"
+            priority: 2
+          
+          - name: "concurrency"
+            description: "Measures concurrent user handling"
+            priority: 3
+          
+          - name: "resource-utilization"
+            description: "Measures CPU, memory, and storage usage"
+            priority: 4
+          
+          - name: "scalability"
+            description: "Measures scaling behavior under load"
+            priority: 5
+          
+          - name: "reliability"
+            description: "Measures system reliability under stress"
+            priority: 6
+        
+        # Benchmark Definitions
+        benchmarks:
+          # Response Time Benchmarks
+          - id: "bm-response-create-todo"
+            name: "Create Todo Response Time"
+            category: "response-time"
+            description: "Measures response time for creating a new todo item"
+            target: "< 200ms P95"
+            critical: true
+            tags: ["api", "create", "response-time"]
+            
+            configuration:
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Performance Test Todo",
+                  "description": "Todo created during performance testing",
+                  "priority": "medium",
+                  "dueDate": "2026-12-31T23:59:59Z",
+                  "tags": ["performance", "test"]
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "5m"
+              rate: "10/second"
+              timeout: "30s"
+            
+            assertions:
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 50
+                threshold: 100  # ms
+                operator: "lt"
+              
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 95
+                threshold: 200  # ms
+                operator: "lt"
+              
+              - type: "success_rate"
+                threshold: 99.5  # %
+                operator: "gte"
+          
+          - id: "bm-response-get-todos"
+            name: "Get Todos Response Time"
+            category: "response-time"
+            description: "Measures response time for retrieving todo items"
+            target: "< 150ms P95"
+            critical: true
+            tags: ["api", "read", "response-time"]
+            
+            configuration:
+              endpoint: "/api/v1/todos?limit=50"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "5m"
+              rate: "15/second"
+              timeout: "30s"
+            
+            assertions:
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 50
+                threshold: 75  # ms
+                operator: "lt"
+              
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 95
+                threshold: 150  # ms
+                operator: "lt"
+              
+              - type: "success_rate"
+                threshold: 99.9  # %
+                operator: "gte"
+          
+          - id: "bm-response-update-todo"
+            name: "Update Todo Response Time"
+            category: "response-time"
+            description: "Measures response time for updating a todo item"
+            target: "< 250ms P95"
+            critical: true
+            tags: ["api", "update", "response-time"]
+            
+            configuration:
+              endpoint: "/api/v1/todos/{todo_id}"
+              method: "PUT"
+              payload: |
+                {
+                  "title": "Updated Performance Test Todo",
+                  "description": "Todo updated during performance testing",
+                  "completed": true,
+                  "priority": "high"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "5m"
+              rate: "8/second"
+              timeout: "30s"
+            
+            assertions:
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 50
+                threshold: 125  # ms
+                operator: "lt"
+              
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 95
+                threshold: 250  # ms
+                operator: "lt"
+              
+              - type: "success_rate"
+                threshold: 99.0  # %
+                operator: "gte"
+        
+          # Throughput Benchmarks
+          - id: "bm-throughput-create"
+            name: "Create Todo Throughput"
+            category: "throughput"
+            description: "Measures maximum throughput for creating todo items"
+            target: "> 500 RPS"
+            critical: true
+            tags: ["api", "create", "throughput"]
+            
+            configuration:
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Throughput Test Todo {{randomString(10)}}",
+                  "description": "Todo created during throughput testing",
+                  "priority": "medium"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "10m"
+              # Start with low rate and gradually increase
+              initial_rate: "50/second"
+              max_rate: "1000/second"
+              increment: "50/second"
+              increment_interval: "30s"
+              timeout: "30s"
+            
+            assertions:
+              - type: "max_throughput"
+                threshold: 500  # RPS
+                operator: "gte"
+              
+              - type: "success_rate"
+                threshold: 95.0  # %
+                operator: "gte"
+              
+              - type: "response_time"
+                threshold: 500  # ms
+                operator: "lt"
+          
+          - id: "bm-throughput-read"
+            name: "Read Todo Throughput"
+            category: "throughput"
+            description: "Measures maximum throughput for reading todo items"
+            target: "> 1000 RPS"
+            critical: true
+            tags: ["api", "read", "throughput"]
+            
+            configuration:
+              endpoint: "/api/v1/todos?limit=20"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "10m"
+              initial_rate: "100/second"
+              max_rate: "2000/second"
+              increment: "100/second"
+              increment_interval: "30s"
+              timeout: "30s"
+            
+            assertions:
+              - type: "max_throughput"
+                threshold: 1000  # RPS
+                operator: "gte"
+              
+              - type: "success_rate"
+                threshold: 98.0  # %
+                operator: "gte"
+              
+              - type: "response_time"
+                threshold: 300  # ms
+                operator: "lt"
+        
+          # Concurrency Benchmarks
+          - id: "bm-concurrency-100"
+            name: "Concurrency Test - 100 Users"
+            category: "concurrency"
+            description: "Measures system behavior with 100 concurrent users"
+            target: "< 500ms P95, > 95% success rate"
+            critical: true
+            tags: ["concurrency", "stress", "scalability"]
+            
+            configuration:
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "10m"
+              virtual_users: 100
+              ramp_up_time: "2m"
+              timeout: "30s"
+            
+            assertions:
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 95
+                threshold: 500  # ms
+                operator: "lt"
+              
+              - type: "success_rate"
+                threshold: 95.0  # %
+                operator: "gte"
+              
+              - type: "error_rate"
+                threshold: 5.0  # %
+                operator: "lte"
+          
+          - id: "bm-concurrency-500"
+            name: "Concurrency Test - 500 Users"
+            category: "concurrency"
+            description: "Measures system behavior with 500 concurrent users"
+            target: "< 1000ms P95, > 90% success rate"
+            critical: true
+            tags: ["concurrency", "stress", "scalability"]
+            
+            configuration:
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Concurrency Test Todo {{randomString(8)}}",
+                  "description": "Todo created during concurrency testing",
+                  "priority": "medium"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              duration: "10m"
+              virtual_users: 500
+              ramp_up_time: "5m"
+              timeout: "60s"
+            
+            assertions:
+              - type: "percentile"
+                metric: "response_time"
+                percentile: 95
+                threshold: 1000  # ms
+                operator: "lt"
+              
+              - type: "success_rate"
+                threshold: 90.0  # %
+                operator: "gte"
+              
+              - type: "error_rate"
+                threshold: 10.0  # %
+                operator: "lte"
+        
+          # Resource Utilization Benchmarks
+          - id: "bm-resource-cpu"
+            name: "CPU Utilization Under Load"
+            category: "resource-utilization"
+            description: "Measures CPU utilization during load testing"
+            target: "< 80% average"
+            critical: false
+            tags: ["resource", "cpu", "utilization"]
+            
+            configuration:
+              metrics_endpoint: "/metrics"
+              query: "rate(process_cpu_seconds_total[1m]) * 100"
+            
+            execution:
+              duration: "15m"
+              # This benchmark runs alongside other benchmarks
+              concurrent_with: ["bm-throughput-create", "bm-concurrency-100"]
+              timeout: "30s"
+            
+            assertions:
+              - type: "average"
+                metric: "cpu_utilization"
+                threshold: 80.0  # %
+                operator: "lt"
+              
+              - type: "max"
+                metric: "cpu_utilization"
+                threshold: 95.0  # %
+                operator: "lt"
+          
+          - id: "bm-resource-memory"
+            name: "Memory Utilization Under Load"
+            category: "resource-utilization"
+            description: "Measures memory utilization during load testing"
+            target: "< 85% average"
+            critical: false
+            tags: ["resource", "memory", "utilization"]
+            
+            configuration:
+              metrics_endpoint: "/metrics"
+              query: "process_resident_memory_bytes"
+            
+            execution:
+              duration: "15m"
+              concurrent_with: ["bm-throughput-create", "bm-concurrency-100"]
+              timeout: "30s"
+            
+            assertions:
+              - type: "average"
+                metric: "memory_utilization"
+                threshold: 85.0  # %
+                operator: "lt"
+              
+              - type: "max"
+                metric: "memory_utilization"
+                threshold: 95.0  # %
+                operator: "lt"
+        
+          # Scalability Benchmarks
+          - id: "bm-scalability-linear"
+            name: "Linear Scalability Test"
+            category: "scalability"
+            description: "Measures how performance scales linearly with resources"
+            target: "Linear performance increase with resource scaling"
+            critical: true
+            tags: ["scalability", "linear", "performance"]
+            
+            configuration:
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            
+            execution:
+              # Test with different numbers of replicas
+              scale_tests:
+                - replicas: 1
+                  duration: "5m"
+                  rate: "100/second"
+                - replicas: 2
+                  duration: "5m"
+                  rate: "100/second"
+                - replicas: 4
+                  duration: "5m"
+                  rate: "100/second"
+                - replicas: 8
+                  duration: "5m"
+                  rate: "100/second"
+              timeout: "30s"
+            
+            assertions:
+              - type: "linear_scalability"
+                expected_ratio: 0.8  # 80% of linear expectation
+                operator: "gte"
+          
+          # Reliability Benchmarks
+          - id: "bm-reliability-stress"
+            name: "Reliability Under Stress"
+            category: "reliability"
+            description: "Measures system reliability during sustained stress"
+            target: "> 99.9% uptime during 1-hour test"
+            critical: true
+            tags: ["reliability", "stress", "uptime"]
+            
+            configuration:
+              endpoint: "/healthz"
+              method: "GET"
+            
+            execution:
+              duration: "1h"
+              rate: "1/30s"  # Check every 30 seconds
+              timeout: "10s"
+            
+            assertions:
+              - type: "uptime"
+                threshold: 99.9  # %
+                operator: "gte"
+              
+              - type: "max_downtime"
+                threshold: 30  # seconds
+                operator: "lte"
+        
+        # Benchmark Execution Environment
+        execution_environment:
+          kubernetes:
+            namespace: "performance-tests"
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "512Mi"
+              limits:
+                cpu: "1000m"
+                memory: "1Gi"
+            node_selector:
+              node_type: "performance"
+            tolerations:
+              - key: "performance"
+                operator: "Equal"
+                value: "true"
+                effect: "NoSchedule"
+          
+          load_generators:
+            count: 3
+            resources:
+              requests:
+                cpu: "1000m"
+                memory: "1Gi"
+              limits:
+                cpu: "2000m"
+                memory: "2Gi"
+          
+          monitoring:
+            enabled: true
+            retention: "7d"
+            alerts:
+              - name: "high_error_rate"
+                condition: "error_rate > 5%"
+                severity: "critical"
+              - name: "high_response_time"
+                condition: "p95_response_time > 1000ms"
+                severity: "warning"
+              - name: "low_throughput"
+                condition: "throughput < 100rps"
+                severity: "warning"
+        
+        # Reporting Configuration
+        reporting:
+          format: "json"
+          output_dir: "/reports"
+          templates:
+            summary: "summary-template.html"
+            detailed: "detailed-template.html"
+            comparison: "comparison-template.html"
+          
+          thresholds:
+            performance_score:
+              excellent: 95
+              good: 85
+              fair: 70
+              poor: 50
+            
+            reliability_score:
+              excellent: 99.9
+              good: 99.5
+              fair: 99.0
+              poor: 98.0
+        
+        # Notification Configuration
+        notifications:
+          on_completion:
+            enabled: true
+            recipients:
+              - "perf-team@todo-app.com"
+              - "devops-team@todo-app.com"
+            channels:
+              - "email"
+              - "slack"
+              - "dashboard"
+          
+          on_failure:
+            enabled: true
+            recipients:
+              - "oncall@todo-app.com"
+              - "perf-team@todo-app.com"
+            channels:
+              - "email"
+              - "slack"
+              - "pagerduty"
+        
+        # Benchmark Scheduling
+        scheduling:
+          cron_expression: "0 2 * * 0"  # Weekly on Sundays at 2 AM
+          timezone: "UTC"
+          overlapping_runs: false
+          retry_on_failure: 3
+          cleanup_after: "30d"
+        
+        # Security Configuration
+        security:
+          authentication:
+            type: "bearer_token"
+            token_source: "env"
+            token_variable: "PERFORMANCE_TEST_TOKEN"
+          
+          authorization:
+            scopes:
+              - "read:todos"
+              - "write:todos"
+              - "read:metrics"
+          
+          data_protection:
+            mask_sensitive: true
+            log_level: "info"
+            audit_trail: true
+        
+        # Advanced Configuration
+        advanced:
+          warmup_duration: "2m"
+          cooldown_duration: "1m"
+          garbage_collection: true
+          jvm_args: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+          network_simulation:
+            enabled: false
+            latency: "50ms"
+            bandwidth: "10Mbps"
+            packet_loss: "0.1%"
+        
+        # Integration Configuration
+        integrations:
+          monitoring:
+            prometheus:
+              enabled: true
+              endpoint: "http://prometheus:9090"
+              retention: "30d"
+            
+            grafana:
+              enabled: true
+              dashboard_uid: "performance-benchmarks"
+              annotations: true
+          
+          alerting:
+            pagerduty:
+              enabled: false
+              integration_key: "${PAGERDUTY_INTEGRATION_KEY}"
+            
+            slack:
+              enabled: true
+              webhook_url: "${SLACK_WEBHOOK_URL}"
+              channel: "#performance-alerts"
+          
+          storage:
+            results_bucket: "performance-results-${ENVIRONMENT}"
+            results_prefix: "benchmarks/"
+            compression: "gzip"
+            retention_days: 90
+        
+        # Custom Metrics
+        custom_metrics:
+          business_metrics:
+            - name: "task_completion_rate"
+              query: "rate(todo_app_tasks_completed_total[5m]) / rate(todo_app_tasks_created_total[5m])"
+              threshold: 0.8
+              alert_on_violation: true
+            
+            - name: "user_engagement_score"
+              query: "avg(todo_app_active_sessions) / avg(todo_app_registered_users)"
+              threshold: 0.1
+              alert_on_violation: false
+          
+          ai_metrics:
+            - name: "prediction_accuracy"
+              query: "avg(todo_app_ai_prediction_accuracy)"
+              threshold: 0.85
+              alert_on_violation: true
+            
+            - name: "recommendation_relevance"
+              query: "avg(todo_app_recommendation_click_rate)"
+              threshold: 0.2
+              alert_on_violation: false
+        
+        # Compliance and Standards
+        compliance:
+          standards:
+            - "SOC 2 Type II"
+            - "ISO 27001"
+            - "GDPR"
+            - "CCPA"
+          
+          audit_requirements:
+            retention: "7 years"
+            encryption: true
+            access_logs: true
+            change_tracking: true
+          
+          reporting_requirements:
+            frequency: "monthly"
+            recipients: ["compliance@todo-app.com", "legal@todo-app.com"]
+            format: ["PDF", "Excel"]
+            certification: true
+        
+        # Performance Goals
+        performance_goals:
+          short_term:
+            - "Achieve 95th percentile response time < 200ms for all APIs"
+            - "Maintain 99.9% uptime during business hours"
+            - "Handle 1000 concurrent users with < 500ms response time"
+            - "Process 500 requests per second sustainably"
+          
+          long_term:
+            - "Achieve sub-100ms response times for 95% of requests"
+            - "Support 10,000 concurrent users"
+            - "Process 5000 requests per second"
+            - "Implement predictive scaling"
+            - "Achieve 99.99% uptime"
+        
+        # Success Criteria
+        success_criteria:
+          primary:
+            - "All critical benchmarks pass"
+            - "Performance targets are met or exceeded"
+            - "No system failures during testing"
+            - "Resource utilization remains within limits"
+          
+          secondary:
+            - "Performance improvements identified"
+            - "Bottlenecks documented and addressed"
+            - "Scalability limits determined"
+            - "Reliability metrics validated"
+        
+        # Exit Criteria
+        exit_criteria:
+          success:
+            - "All critical benchmarks pass"
+            - "Performance score > 85"
+            - "Reliability score > 99.5%"
+            - "No critical issues found"
+          
+          failure:
+            - "Critical benchmarks fail"
+            - "Performance score < 50"
+            - "System instability observed"
+            - "Security vulnerabilities found"
+          
+          partial_success:
+            - "Most benchmarks pass"
+            - "Performance score 70-84"
+            - "Issues identified but manageable"
+            - "Improvements documented"
+      performance-test-scenarios.yaml: |
+        # Performance Test Scenarios
+        # Detailed test scenarios for the Todo AI system performance testing
+        
+        version: "1.0"
+        scenarios:
+        
+        # Scenario 1: Basic CRUD Operations Under Load
+        - name: "basic-crud-under-load"
+          description: "Test basic CRUD operations under moderate load"
+          priority: "high"
+          tags: ["crud", "moderate-load", "api"]
+          
+          steps:
+            - name: "warmup"
+              description: "Warm up the system"
+              duration: "2m"
+              users: 10
+              endpoint: "/healthz"
+              method: "GET"
+              think_time: "1s"
+            
+            - name: "create-todos"
+              description: "Create todo items"
+              duration: "5m"
+              users: 50
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Test Todo {{randomString(10)}}",
+                  "description": "Performance test todo item",
+                  "priority": "{{randomChoice(['low', 'medium', 'high'])}}",
+                  "dueDate": "{{futureDate(30)}}",
+                  "tags": ["performance", "test", "{{randomString(5)}}"]
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+            
+            - name: "read-todos"
+              description: "Read todo items"
+              duration: "5m"
+              users: 75
+              endpoint: "/api/v1/todos?limit=20"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "1.5s"
+            
+            - name: "update-todos"
+              description: "Update todo items"
+              duration: "5m"
+              users: 30
+              endpoint: "/api/v1/todos/{{randomTodoId()}}"
+              method: "PUT"
+              payload: |
+                {
+                  "title": "Updated Test Todo {{randomString(10)}}",
+                  "description": "Updated performance test todo item",
+                  "completed": "{{randomBoolean(0.3)}}",
+                  "priority": "{{randomChoice(['low', 'medium', 'high'])}}"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "3s"
+            
+            - name: "delete-todos"
+              description: "Delete todo items"
+              duration: "3m"
+              users: 20
+              endpoint: "/api/v1/todos/{{randomTodoId()}}"
+              method: "DELETE"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "5s"
+          
+          assertions:
+            - metric: "response_time.P95"
+              threshold: 300
+              operator: "lt"
+              scope: ["create-todos", "read-todos", "update-todos"]
+            
+            - metric: "success_rate"
+              threshold: 99.0
+              operator: "gte"
+              scope: ["create-todos", "read-todos", "update-todos", "delete-todos"]
+            
+            - metric: "error_rate"
+              threshold: 1.0
+              operator: "lte"
+              scope: ["all"]
+        
+        # Scenario 2: High Concurrency Test
+        - name: "high-concurrency-test"
+          description: "Test system behavior under high concurrency"
+          priority: "critical"
+          tags: ["concurrency", "stress", "scalability"]
+          
+          steps:
+            - name: "ramp-up"
+              description: "Gradually increase concurrent users"
+              duration: "10m"
+              users:
+                initial: 50
+                target: 500
+                strategy: "linear"
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "1s"
+            
+            - name: "sustained-load"
+              description: "Maintain high concurrency load"
+              duration: "30m"
+              users: 500
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Concurrency Test Todo {{randomString(8)}}",
+                  "description": "Todo created during high concurrency test",
+                  "priority": "medium"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "0.5s"
+            
+            - name: "ramp-down"
+              description: "Gradually decrease concurrent users"
+              duration: "5m"
+              users:
+                initial: 500
+                target: 50
+                strategy: "linear"
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+          
+          assertions:
+            - metric: "response_time.P95"
+              threshold: 1000
+              operator: "lt"
+              scope: ["sustained-load"]
+            
+            - metric: "success_rate"
+              threshold: 95.0
+              operator: "gte"
+              scope: ["sustained-load"]
+            
+            - metric: "error_rate"
+              threshold: 5.0
+              operator: "lte"
+              scope: ["sustained-load"]
+            
+            - metric: "cpu.utilization.avg"
+              threshold: 85.0
+              operator: "lt"
+              scope: ["sustained-load"]
+            
+            - metric: "memory.utilization.avg"
+              threshold: 90.0
+              operator: "lt"
+              scope: ["sustained-load"]
+        
+        # Scenario 3: Database Stress Test
+        - name: "database-stress-test"
+          description: "Test database performance under stress"
+          priority: "high"
+          tags: ["database", "stress", "persistence"]
+          
+          steps:
+            - name: "bulk-insert"
+              description: "Insert large number of records"
+              duration: "10m"
+              users: 100
+              endpoint: "/api/v1/todos/bulk"
+              method: "POST"
+              payload: |
+                {
+                  "todos": [
+                    {
+                      "title": "Bulk Todo {{counter()}}",
+                      "description": "Bulk inserted todo item",
+                      "priority": "{{randomChoice(['low', 'medium', 'high'])}}",
+                      "dueDate": "{{futureDate(7)}}"
+                    }
+                  ]
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "0.1s"
+            
+            - name: "complex-query"
+              description: "Execute complex queries with filters"
+              duration: "10m"
+              users: 50
+              endpoint: "/api/v1/todos/search"
+              method: "POST"
+              payload: |
+                {
+                  "filters": {
+                    "status": "{{randomChoice(['active', 'completed', 'all'])}}",
+                    "priority": "{{randomChoice(['low', 'medium', 'high', 'all'])}}",
+                    "tags": ["{{randomString(5)}}"],
+                    "dateRange": {
+                      "start": "{{pastDate(30)}}",
+                      "end": "{{futureDate(30)}}"
+                    }
+                  },
+                  "sortBy": "{{randomChoice(['createdDate', 'dueDate', 'priority'])}}",
+                  "sortOrder": "{{randomChoice(['asc', 'desc'])}}",
+                  "limit": 50,
+                  "offset": 0
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "1s"
+            
+            - name: "concurrent-read-write"
+              description: "Simultaneous read and write operations"
+              duration: "15m"
+              phases:
+                - name: "read-heavy"
+                  duration: "5m"
+                  users: 80
+                  endpoint: "/api/v1/todos"
+                  method: "GET"
+                  weight: 70
+                - name: "balanced"
+                  duration: "5m"
+                  users: 100
+                  endpoints:
+                    - {method: "GET", endpoint: "/api/v1/todos", weight: 50}
+                    - {method: "POST", endpoint: "/api/v1/todos", weight: 30}
+                    - {method: "PUT", endpoint: "/api/v1/todos/{id}", weight: 20}
+                  weight: 50
+                - name: "write-heavy"
+                  duration: "5m"
+                  users: 60
+                  endpoints:
+                    - {method: "POST", endpoint: "/api/v1/todos", weight: 60}
+                    - {method: "PUT", endpoint: "/api/v1/todos/{id}", weight: 30}
+                    - {method: "DELETE", endpoint: "/api/v1/todos/{id}", weight: 10}
+                  weight: 60
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+          
+          assertions:
+            - metric: "db.query_time.P95"
+              threshold: 500
+              operator: "lt"
+              scope: ["bulk-insert", "complex-query", "concurrent-read-write"]
+            
+            - metric: "db.connections.utilization"
+              threshold: 80.0
+              operator: "lt"
+              scope: ["all"]
+            
+            - metric: "db.errors.rate"
+              threshold: 0.1
+              operator: "lte"
+              scope: ["all"]
+        
+        # Scenario 4: AI/ML Service Performance
+        - name: "ai-service-performance"
+          description: "Test AI/ML service performance"
+          priority: "high"
+          tags: ["ai", "ml", "intelligence", "predictions"]
+          
+          steps:
+            - name: "prediction-requests"
+              description: "Send prediction requests to AI service"
+              duration: "10m"
+              users: 200
+              endpoint: "/api/v1/ai/predict"
+              method: "POST"
+              payload: |
+                {
+                  "input": {
+                    "todo_title": "Complete performance testing {{randomString(10)}}",
+                    "description": "Performance test for AI predictions",
+                    "context": {
+                      "user_preferences": {
+                        "preferred_times": ["morning", "evening"],
+                        "categories": ["work", "personal"],
+                        "priority_weights": {
+                          "urgent": 0.9,
+                          "important": 0.7,
+                          "normal": 0.5,
+                          "low": 0.3
+                        }
+                      },
+                      "historical_data": {
+                        "completion_rate": 0.85,
+                        "average_completion_time": 2.5,
+                        "preferred_category_distribution": {
+                          "work": 0.4,
+                          "personal": 0.3,
+                          "health": 0.2,
+                          "other": 0.1
+                        }
+                      }
+                    }
+                  }
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "0.5s"
+            
+            - name: "recommendation-requests"
+              description: "Request intelligent recommendations"
+              duration: "10m"
+              users: 150
+              endpoint: "/api/v1/ai/recommend"
+              method: "POST"
+              payload: |
+                {
+                  "context": {
+                    "user_id": "{{randomUserId()}}",
+                    "current_todos": [
+                      {
+                        "title": "Sample todo {{counter()}}",
+                        "priority": "{{randomChoice(['low', 'medium', 'high'])}}",
+                        "due_date": "{{futureDate(14)}}",
+                        "category": "{{randomChoice(['work', 'personal', 'health'])}}"
+                      }
+                    ],
+                    "preferences": {
+                      "availability": ["morning", "evening"],
+                      "focus_areas": ["productivity", "health", "learning"]
+                    }
+                  }
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "1s"
+            
+            - name: "analysis-requests"
+              description: "Request data analysis and insights"
+              duration: "5m"
+              users: 50
+              endpoint: "/api/v1/ai/analyze"
+              method: "POST"
+              payload: |
+                {
+                  "analysis_type": "{{randomChoice(['trend', 'pattern', 'prediction', 'optimization'])}}",
+                  "time_range": {
+                    "start": "{{pastDate(90)}}",
+                    "end": "{{today()}}"
+                  },
+                  "dimensions": [
+                    "completion_rate",
+                    "priority_distribution",
+                    "category_breakdown",
+                    "time_to_completion"
+                  ],
+                  "user_context": {
+                    "user_id": "{{randomUserId()}}",
+                    "preferences": {
+                      "report_format": "detailed",
+                      "frequency": "weekly"
+                    }
+                  }
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+          
+          assertions:
+            - metric: "ai.response_time.P95"
+              threshold: 2000
+              operator: "lt"
+              scope: ["prediction-requests", "recommendation-requests", "analysis-requests"]
+            
+            - metric: "ai.success_rate"
+              threshold: 98.0
+              operator: "gte"
+              scope: ["all"]
+            
+            - metric: "ai.accuracy.rate"
+              threshold: 0.85
+              operator: "gte"
+              scope: ["prediction-requests"]
+        
+        # Scenario 5: Integration and End-to-End Test
+        - name: "integration-e2e-test"
+          description: "End-to-end integration performance test"
+          priority: "critical"
+          tags: ["integration", "e2e", "workflow", "complete-flow"]
+          
+          steps:
+            - name: "complete-workflow"
+              description: "Execute complete user workflow"
+              duration: "20m"
+              users: 100
+              workflow:
+                steps:
+                  - method: "POST"
+                    endpoint: "/api/v1/auth/login"
+                    payload: |
+                      {
+                        "username": "{{randomUsername()}}",
+                        "password": "${TEST_USER_PASSWORD}"
+                      }
+                    extract:
+                      - name: "auth_token"
+                        path: "$.token"
+                    verify: "$.success == true"
+                  
+                  - method: "GET"
+                    endpoint: "/api/v1/todos"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                    verify: "$.todos[*].length() >= 0"
+                  
+                  - method: "POST"
+                    endpoint: "/api/v1/todos"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                      "Content-Type": "application/json"
+                    payload: |
+                      {
+                        "title": "E2E Test Todo {{randomString(8)}}",
+                        "description": "Created during end-to-end performance test",
+                        "priority": "{{randomChoice(['low', 'medium', 'high'])}}",
+                        "dueDate": "{{futureDate(7)}}",
+                        "tags": ["performance", "e2e", "{{randomString(5)}}"]
+                      }
+                    extract:
+                      - name: "todo_id"
+                        path: "$.id"
+                    verify: "$.id != null"
+                  
+                  - method: "GET"
+                    endpoint: "/api/v1/todos/{{todo_id}}"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                    verify: "$.id == '{{todo_id}}'"
+                  
+                  - method: "PUT"
+                    endpoint: "/api/v1/todos/{{todo_id}}"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                      "Content-Type": "application/json"
+                    payload: |
+                      {
+                        "title": "Updated E2E Test Todo {{randomString(8)}}",
+                        "completed": true,
+                        "priority": "high"
+                      }
+                    verify: "$.completed == true"
+                  
+                  - method: "POST"
+                    endpoint: "/api/v1/ai/recommend"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                      "Content-Type": "application/json"
+                    payload: |
+                      {
+                        "context": {
+                          "recent_activity": ["completed_todo"],
+                          "completed_todo_id": "{{todo_id}}"
+                        }
+                      }
+                    verify: "$.recommendations[*].length() > 0"
+                  
+                  - method: "DELETE"
+                    endpoint: "/api/v1/todos/{{todo_id}}"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                    verify: "$.success == true"
+                  
+                  - method: "GET"
+                    endpoint: "/api/v1/analytics/user"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                    verify: "$.stats.total_todos >= 0"
+                  
+                  - method: "POST"
+                    endpoint: "/api/v1/auth/logout"
+                    headers:
+                      "Authorization": "Bearer {{auth_token}}"
+                    verify: "$.success == true"
+              think_time: "3s"
+          
+          assertions:
+            - metric: "workflow.completion_rate"
+              threshold: 95.0
+              operator: "gte"
+              scope: ["complete-workflow"]
+            
+            - metric: "workflow.response_time.P95"
+              threshold: 5000
+              operator: "lt"
+              scope: ["complete-workflow"]
+            
+            - metric: "individual_step.response_time.P95"
+              threshold: 1000
+              operator: "lt"
+              scope: ["complete-workflow"]
+        
+        # Scenario 6: Chaos Engineering Light
+        - name: "controlled-chaos-test"
+          description: "Controlled chaos testing to verify resilience"
+          priority: "medium"
+          tags: ["chaos", "resilience", "fault-tolerance"]
+          
+          steps:
+            - name: "baseline"
+              description: "Establish baseline performance"
+              duration: "5m"
+              users: 50
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+            
+            - name: "induce-latency"
+              description: "Induce artificial latency in database"
+              duration: "3m"
+              users: 50
+              endpoint: "/api/v1/todos"
+              method: "POST"
+              payload: |
+                {
+                  "title": "Chaos Test Todo {{randomString(8)}}",
+                  "description": "Created during chaos testing",
+                  "priority": "medium"
+                }
+              headers:
+                "Content-Type": "application/json"
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+              chaos_injection:
+                target: "database"
+                type: "latency"
+                parameters:
+                  latency_ms: 500
+                  duration: "2m"
+                  probability: 0.3
+            
+            - name: "recover"
+              description: "Verify recovery after induced chaos"
+              duration: "5m"
+              users: 50
+              endpoint: "/api/v1/todos"
+              method: "GET"
+              headers:
+                "Authorization": "Bearer ${PERFORMANCE_TOKEN}"
+              think_time: "2s"
+          
+          assertions:
+            - metric: "response_time.P95"
+              threshold: 2000
+              operator: "lt"
+              scope: ["induce-latency"]
+            
+            - metric: "success_rate"
+              threshold: 90.0
+              operator: "gte"
+              scope: ["induce-latency"]
+            
+            - metric: "recovery_time"
+              threshold: 60
+              operator: "lte"
+              scope: ["recover"]
+        
+        # Scenario Configuration
+        scenario_defaults:
+          timeout: "30s"
+          retry_count: 3
+          retry_delay: "1s"
+          connection_timeout: "10s"
+          read_timeout: "20s"
+          think_time: "1s"
+          ramp_up_time: "30s"
+          ramp_down_time: "30s"
+          error_threshold: 5.0
+          stop_on_failure: false
+        
+        # Global Assertions
+        global_assertions:
+          - metric: "system.uptime"
+            threshold: 99.0
+            operator: "gte"
+            scope: ["all"]
+          
+          - metric: "resource.cpu.utilization.avg"
+            threshold: 80.0
+            operator: "lt"
+            scope: ["all"]
+          
+          - metric: "resource.memory.utilization.avg"
+            threshold: 85.0
+            operator: "lt"
+            scope: ["all"]
+          
+          - metric: "resource.disk.utilization.avg"
+            threshold: 90.0
+            operator: "lt"
+            scope: ["all"]
+        
+        # Reporting Configuration
+        reporting:
+          templates:
+            executive_summary: "exec-summary-template.html"
+            technical_details: "tech-details-template.html"
+            comparison_report: "comparison-template.html"
+            trend_analysis: "trend-template.html"
+          
+          metrics:
+            primary:
+              - "response_time.P50"
+              - "response_time.P95"
+              - "response_time.P99"
+              - "success_rate"
+              - "throughput"
+              - "error_rate"
+            
+            secondary:
+              - "cpu.utilization"
+              - "memory.utilization"
+              - "database.query_time"
+              - "cache.hit_rate"
+              - "network.latency"
+              - "ai.prediction_accuracy"
+          
+          visualization:
+            charts:
+              - type: "line"
+                metrics: ["response_time.P95", "response_time.P99"]
+                title: "Response Time Percentiles Over Time"
+              
+              - type: "bar"
+                metrics: ["success_rate", "error_rate"]
+                title: "Success and Error Rates"
+              
+              - type: "heatmap"
+                metrics: ["response_time"]
+                title: "Response Time Heatmap"
+              
+              - type: "gauge"
+                metrics: ["cpu.utilization", "memory.utilization"]
+                title: "Resource Utilization Gauges"
+          
+          distribution:
+            recipients:
+              - "perf-team@todo-app.com"
+              - "dev-team@todo-app.com"
+              - "product-team@todo-app.com"
+              - "executives@todo-app.com"
+            channels:
+              - "email"
+              - "dashboard"
+              - "slack"
+            schedule:
+              - "after_each_run"
+              - "daily_digest"
+              - "weekly_summary"
+              - "monthly_review"
+        
+        # Performance Goals by Scenario
+        performance_targets:
+          basic_crud:
+            response_time_p95: 300
+            success_rate: 99.0
+            throughput: 200
+          
+          high_concurrency:
+            response_time_p95: 1000
+            success_rate: 95.0
+            max_users: 500
+          
+          database_stress:
+            response_time_p95: 500
+            success_rate: 98.0
+            max_concurrent_connections: 200
+          
+          ai_performance:
+            response_time_p95: 2000
+            success_rate: 98.0
+            accuracy: 0.85
+          
+          integration_e2e:
+            response_time_p95: 5000
+            success_rate: 95.0
+            workflow_completion: 90.0
+          
+          chaos_resilience:
+            response_time_p95: 2000
+            success_rate: 90.0
+            recovery_time: 60
+      benchmark-execution-pipeline.yaml: |
+        # Benchmark Execution Pipeline
+        # Pipeline for executing performance benchmarks
+        
+        apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: benchmark-executor-sa
+          namespace: performance
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          name: benchmark-executor-role
+          namespace: performance
+        rules:
+        - apiGroups: [""]
+          resources: ["pods", "services", "configmaps", "secrets"]
+          verbs: ["get", "list", "create", "update", "patch", "delete"]
+        - apiGroups: ["batch"]
+          resources: ["jobs", "cronjobs"]
+          verbs: ["get", "list", "create", "update", "patch", "delete"]
+        - apiGroups: ["apps"]
+          resources: ["deployments", "statefulsets"]
+          verbs: ["get", "list"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: benchmark-executor-binding
+          namespace: performance
+        subjects:
+        - kind: ServiceAccount
+          name: benchmark-executor-sa
+          namespace: performance
+        roleRef:
+          kind: Role
+          name: benchmark-executor-role
+          apiGroup: rbac.authorization.k8s.io
+        ---
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: benchmark-execution-config
+          namespace: performance
+        data:
+          benchmark-runner.sh: |
+            #!/bin/bash
+            # Script to run performance benchmarks
+            
+            set -e
+            
+            # Configuration
+            BENCHMARK_SUITE=${BENCHMARK_SUITE:-"/etc/benchmarks/benchmark-suite.yaml"}
+            RESULTS_DIR=${RESULTS_DIR:-"/results"}
+            REPORT_FORMAT=${REPORT_FORMAT:-"json"}
+            TIMEOUT=${TIMEOUT:-"3600"}  # 1 hour default timeout
+            
+            # Logging function
+            log() {
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >&2
+            }
+            
+            # Function to run a single benchmark
+            run_benchmark() {
+                local benchmark_id=$1
+                local benchmark_config=$2
+                local results_file="${RESULTS_DIR}/${benchmark_id}_$(date +%Y%m%d_%H%M%S).json"
+                
+                log "Starting benchmark: $benchmark_id"
+                
+                # Extract benchmark configuration
+                local endpoint=$(echo "$benchmark_config" | yq '.configuration.endpoint')
+                local method=$(echo "$benchmark_config" | yq '.configuration.method')
+                local payload=$(echo "$benchmark_config" | yq '.configuration.payload')
+                local headers=$(echo "$benchmark_config" | yq '.configuration.headers')
+                
+                # Extract execution parameters
+                local duration=$(echo "$benchmark_config" | yq '.execution.duration')
+                local rate=$(echo "$benchmark_config" | yq '.execution.rate')
+                local timeout=$(echo "$benchmark_config" | yq '.execution.timeout')
+                
+                # Run the benchmark using hey or artillery
+                if command -v hey &> /dev/null; then
+                    log "Using hey for benchmark: $benchmark_id"
+                    
+                    local url="http://todo-app.todo-app.svc.cluster.local${endpoint}"
+                    local hey_cmd="timeout $TIMEOUT hey -z ${duration} -q ${rate%%/*} -c 10 -m ${method} -h '${headers}'"
+                    
+                    if [[ -n "$payload" ]]; then
+                        # Save payload to temporary file
+                        local payload_file=$(mktemp)
+                        echo "$payload" > "$payload_file"
+                        hey_cmd="$hey_cmd -d $payload_file"
+                    fi
+                    
+                    hey_cmd="$hey_cmd $url"
+                    
+                    # Execute benchmark and capture results
+                    eval $hey_cmd > "$results_file" 2>&1
+                    local exit_code=$?
+                    
+                    # Clean up
+                    if [[ -n "$payload_file" && -f "$payload_file" ]]; then
+                        rm "$payload_file"
+                    fi
+                    
+                    if [[ $exit_code -ne 0 ]]; then
+                        log "Benchmark $benchmark_id failed with exit code: $exit_code"
+                        return $exit_code
+                    fi
+                elif command -v artillery &> /dev/null; then
+                    log "Using artillery for benchmark: $benchmark_id"
+                    
+                    # Create Artillery test script
+                    local artillery_script=$(mktemp)
+                    cat > "$artillery_script" << EOF
+            config:
+              target: 'http://todo-app.todo-app.svc.cluster.local'
+              phases:
+                - duration: $(echo "$duration" | sed 's/m/*60+/;s/s//;s/^0*//;s/\*60+$//')
+                  arrivalRate: $(echo "$rate" | cut -d'/' -f1)
+              defaults:
+                headers:
+                  Authorization: "Bearer ${PERFORMANCE_TEST_TOKEN}"
+            scenarios:
+              - name: "$benchmark_id"
+                weight: 1
+                flow:
+                  - $method.toLowerCase():
+                      url: "$endpoint"
+            $(if [[ -n "$payload" ]]; then echo "          - think: 1"; fi)
+EOF
+                    
+                    # Run artillery benchmark
+                    artillery run "$artillery_script" --output "$results_file" --quiet
+                    local exit_code=$?
+                    
+                    # Clean up
+                    rm "$artillery_script"
+                    
+                    if [[ $exit_code -ne 0 ]]; then
+                        log "Benchmark $benchmark_id failed with exit code: $exit_code"
+                        return $exit_code
+                    fi
+                else
+                    log "Error: Neither hey nor artillery found for benchmark execution"
+                    return 1
+                fi
+                
+                log "Completed benchmark: $benchmark_id"
+                return 0
+            }
+            
+            # Function to run all benchmarks in a category
+            run_category_benchmarks() {
+                local category=$1
+                log "Running benchmarks in category: $category"
+                
+                # Extract benchmarks for this category
+                local benchmarks=$(yq ".benchmarks[]" "$BENCHMARK_SUITE" | \
+                    yq "select(.category == \"$category\")")
+                
+                local total_benchmarks=$(echo "$benchmarks" | yq 'length')
+                local completed=0
+                local failed=0
+                
+                while IFS= read -r benchmark; do
+                    if [[ -n "$benchmark" && "$benchmark" != "null" ]]; then
+                        local benchmark_id=$(echo "$benchmark" | yq '.id')
+                        if run_benchmark "$benchmark_id" "$benchmark"; then
+                            ((completed++))
+                            log "Benchmark $benchmark_id completed successfully"
+                        else
+                            ((failed++))
+                            log "Benchmark $benchmark_id failed"
+                        fi
+                    fi
+                done < <(echo "$benchmarks" | yq -c '.[]')
+                
+                log "Category $category completed: $completed/$total_benchmarks passed, $failed failed"
+            }
+            
+            # Function to run all benchmarks
+            run_all_benchmarks() {
+                log "Starting all benchmarks execution"
+                
+                # Get all unique categories
+                local categories=$(yq ".benchmark_categories[].name" "$BENCHMARK_SUITE" | sort)
+                
+                for category in $categories; do
+                    run_category_benchmarks "$category"
+                done
+                
+                log "All benchmarks execution completed"
+            }
+            
+            # Function to generate report
+            generate_report() {
+                log "Generating benchmark report"
+                
+                # Collect all results
+                local results_json=$(find "$RESULTS_DIR" -name "*.json" -exec cat {} \; | jq -s .)
+                
+                # Generate summary
+                local summary=$(echo "$results_json" | jq -n '
+                    {
+                        total_tests: inputs | length,
+                        passed_tests: inputs | map(select(.error == null)) | length,
+                        failed_tests: inputs | map(select(.error != null)) | length,
+                        timestamp: now | strftime("%Y-%m-%d %H:%M:%S"),
+                        environment: env.ENVIRONMENT
+                    }
+                ')
+                
+                # Save report
+                echo "$summary" > "${RESULTS_DIR}/summary_$(date +%Y%m%d_%H%M%S).json"
+                
+                log "Report generated successfully"
+            }
+            
+            # Main execution
+            log "Starting benchmark execution pipeline"
+            
+            # Create results directory
+            mkdir -p "$RESULTS_DIR"
+            
+            # Run benchmarks
+            if [[ -n "$BENCHMARK_CATEGORY" ]]; then
+                run_category_benchmarks "$BENCHMARK_CATEGORY"
+            elif [[ -n "$BENCHMARK_ID" ]]; then
+                local benchmark_config=$(yq ".benchmarks[]" "$BENCHMARK_SUITE" | \
+                    yq "select(.id == \"$BENCHMARK_ID\")")
+                run_benchmark "$BENCHMARK_ID" "$benchmark_config"
+            else
+                run_all_benchmarks
+            fi
+            
+            # Generate report
+            generate_report
+            
+            log "Benchmark execution pipeline completed"
+          benchmark-runner-config.json: |
+            {
+              "benchmarkRunner": {
+                "timeout": 3600,
+                "resultsDirectory": "/results",
+                "reportFormat": "json",
+                "parallelExecution": true,
+                "maxParallelBenchmarks": 3,
+                "retryAttempts": 2,
+                "retryDelay": 5000,
+                "cleanupResultsAfterDays": 30,
+                "notifyOnCompletion": true,
+                "notificationRecipients": [
+                  "perf-team@todo-app.com",
+                  "dev-team@todo-app.com"
+                ]
+              },
+              "tools": {
+                "hey": {
+                  "enabled": true,
+                  "defaultDuration": "5m",
+                  "defaultRate": "10/second",
+                  "maxRate": "1000/second"
+                },
+                "artillery": {
+                  "enabled": true,
+                  "defaultDuration": 300,
+                  "defaultArrivalRate": 10,
+                  "maxArrivalRate": 1000
+                },
+                "wrk": {
+                  "enabled": false,
+                  "defaultDuration": "5m",
+                  "defaultThreads": 2,
+                  "defaultConnections": 10
+                }
+              },
+              "assertions": {
+                "defaultTimeout": 30000,
+                "retryAttempts": 3,
+                "retryDelay": 1000,
+                "failureThreshold": 5.0
+              },
+              "monitoring": {
+                "enabled": true,
+                "metricsCollection": {
+                  "interval": 1000,
+                  "types": [
+                    "response_time",
+                    "throughput",
+                    "error_rate",
+                    "success_rate",
+                    "resource_utilization"
+                  ]
+                },
+                "alerting": {
+                  "enabled": true,
+                  "thresholds": {
+                    "response_time_p95": 1000,
+                    "error_rate": 5.0,
+                    "success_rate": 95.0
+                  }
+                }
+              }
+            }
+        ---
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: performance-benchmark-job
+          namespace: performance
+        spec:
+          template:
+            spec:
+              serviceAccountName: benchmark-executor-sa
+              containers:
+              - name: benchmark-runner
+                image: busybox:latest
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Install required tools
+                  wget -qO- https://github.com/rakyll/hey/releases/download/v0.1.4/hey_linux_amd64.tar.gz | tar xz
+                  mv hey /usr/local/bin/
+                  
+                  # Run benchmarks
+                  /benchmark-runner.sh
+                volumeMounts:
+                - name: benchmarks
+                  mountPath: /etc/benchmarks
+                - name: results
+                  mountPath: /results
+                env:
+                - name: BENCHMARK_SUITE
+                  value: "/etc/benchmarks/benchmark-suite.yaml"
+                - name: RESULTS_DIR
+                  value: "/results"
+                - name: PERFORMANCE_TEST_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: performance-test-secrets
+                      key: token
+              volumes:
+              - name: benchmarks
+                configMap:
+                  name: benchmark-suite-config
+              - name: results
+                emptyDir: {}
+              restartPolicy: Never
+          backoffLimit: 4
+        ---
+        apiVersion: batch/v1
+        kind: CronJob
+        metadata:
+          name: weekly-performance-benchmarks
+          namespace: performance
+        spec:
+          schedule: "0 2 * * 0"  # Every Sunday at 2 AM
+          jobTemplate:
+            spec:
+              template:
+                spec:
+                  serviceAccountName: benchmark-executor-sa
+                  containers:
+                  - name: benchmark-runner
+                    image: busybox:latest
+                    command:
+                    - /bin/sh
+                    - -c
+                    - |
+                      # Install required tools
+                      wget -qO- https://github.com/rakyll/hey/releases/download/v0.1.4/hey_linux_amd64.tar.gz | tar xz
+                      mv hey /usr/local/bin/
+                      
+                      # Run weekly benchmarks
+                      BENCHMARK_CATEGORY="response-time" /benchmark-runner.sh
+                      BENCHMARK_CATEGORY="throughput" /benchmark-runner.sh
+                      BENCHMARK_CATEGORY="reliability" /benchmark-runner.sh
+                    volumeMounts:
+                    - name: benchmarks
+                      mountPath: /etc/benchmarks
+                    - name: results
+                      mountPath: /results
+                    env:
+                    - name: BENCHMARK_SUITE
+                      value: "/etc/benchmarks/benchmark-suite.yaml"
+                    - name: RESULTS_DIR
+                      value: "/results"
+                    - name: PERFORMANCE_TEST_TOKEN
+                      valueFrom:
+                        secretKeyRef:
+                          name: performance-test-secrets
+                          key: token
+                  volumes:
+                  - name: benchmarks
+                    configMap:
+                      name: benchmark-suite-config
+                  - name: results
+                    persistentVolumeClaim:
+                      claimName: benchmark-results-pvc
+                  restartPolicy: Never
+          successfulJobsHistoryLimit: 3
+          failedJobsHistoryLimit: 1

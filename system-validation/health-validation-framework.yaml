@@ -1,0 +1,1878 @@
+# Comprehensive System Health Check and Validation Framework
+# Framework for comprehensive system health checks and validation in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: system-health-check-framework
+  namespace: todo-app
+data:
+  health-check-framework.yaml: |
+    # System Health Check and Validation Framework
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: health-check-framework-config
+      namespace: monitoring
+    data:
+      health-check-framework.json: |
+        {
+          "healthCheckFramework": {
+            "version": "1.0.0",
+            "metadata": {
+              "name": "todo-app-health-check-framework",
+              "description": "Comprehensive health check and validation framework for Todo AI system",
+              "version": "1.0.0",
+              "author": "Todo AI Health Team",
+              "created": "2026-02-09"
+            },
+            "components": {
+              "application": {
+                "name": "Todo Application",
+                "type": "service",
+                "healthEndpoint": "/healthz",
+                "readinessEndpoint": "/readyz",
+                "livenessEndpoint": "/livez",
+                "validationChecks": [
+                  {
+                    "name": "api-responsiveness",
+                    "type": "latency",
+                    "endpoint": "/api/v1/todos",
+                    "method": "GET",
+                    "timeout": 5000,
+                    "threshold": 1000,
+                    "critical": true
+                  },
+                  {
+                    "name": "database-connectivity",
+                    "type": "connectivity",
+                    "endpoint": "/health/database",
+                    "timeout": 3000,
+                    "critical": true
+                  },
+                  {
+                    "name": "cache-connectivity",
+                    "type": "connectivity",
+                    "endpoint": "/health/cache",
+                    "timeout": 3000,
+                    "critical": false
+                  }
+                ]
+              },
+              "dapr": {
+                "name": "Dapr Runtime",
+                "type": "service-mesh",
+                "healthEndpoint": "/v1.0/healthz",
+                "validationChecks": [
+                  {
+                    "name": "dapr-sidecar-health",
+                    "type": "connectivity",
+                    "endpoint": "/v1.0/healthz",
+                    "timeout": 2000,
+                    "critical": true
+                  },
+                  {
+                    "name": "dapr-state-component",
+                    "type": "component",
+                    "component": "statestore",
+                    "timeout": 3000,
+                    "critical": true
+                  },
+                  {
+                    "name": "dapr-pubsub-component",
+                    "type": "component",
+                    "component": "pubsub",
+                    "timeout": 3000,
+                    "critical": true
+                  }
+                ]
+              },
+              "kafka": {
+                "name": "Kafka Messaging",
+                "type": "messaging",
+                "validationChecks": [
+                  {
+                    "name": "kafka-connectivity",
+                    "type": "connectivity",
+                    "endpoint": "kafka:9092",
+                    "timeout": 5000,
+                    "critical": true
+                  },
+                  {
+                    "name": "kafka-producer-functionality",
+                    "type": "functionality",
+                    "topic": "todo-events",
+                    "timeout": 10000,
+                    "critical": true
+                  },
+                  {
+                    "name": "kafka-consumer-functionality",
+                    "type": "functionality",
+                    "topic": "todo-events",
+                    "timeout": 10000,
+                    "critical": true
+                  }
+                ]
+              },
+              "database": {
+                "name": "PostgreSQL Database",
+                "type": "database",
+                "validationChecks": [
+                  {
+                    "name": "db-connectivity",
+                    "type": "connectivity",
+                    "timeout": 3000,
+                    "critical": true
+                  },
+                  {
+                    "name": "db-query-performance",
+                    "type": "performance",
+                    "query": "SELECT 1",
+                    "timeout": 2000,
+                    "threshold": 500,
+                    "critical": true
+                  },
+                  {
+                    "name": "db-connection-pool",
+                    "type": "resource",
+                    "metric": "connection_utilization",
+                    "threshold": 80,
+                    "critical": false
+                  }
+                ]
+              },
+              "cache": {
+                "name": "Redis Cache",
+                "type": "cache",
+                "validationChecks": [
+                  {
+                    "name": "cache-connectivity",
+                    "type": "connectivity",
+                    "timeout": 2000,
+                    "critical": false
+                  },
+                  {
+                    "name": "cache-performance",
+                    "type": "performance",
+                    "operation": "setget",
+                    "timeout": 1000,
+                    "threshold": 100,
+                    "critical": false
+                  },
+                  {
+                    "name": "cache-hit-ratio",
+                    "type": "metric",
+                    "metric": "hit_ratio",
+                    "threshold": 90,
+                    "critical": false
+                  }
+                ]
+              }
+            },
+            "validationStrategies": {
+              "connectivity": {
+                "timeout": 5000,
+                "retries": 3,
+                "backoff": 1000
+              },
+              "latency": {
+                "measurement": "percentile_95",
+                "threshold_unit": "milliseconds",
+                "alert_on_violation": true
+              },
+              "functionality": {
+                "test_data": "health-check-test-data",
+                "cleanup_after_test": true,
+                "validation_timeout": 15000
+              },
+              "performance": {
+                "baseline_comparison": true,
+                "regression_threshold": 20,
+                "measurement_cycles": 10
+              },
+              "resource": {
+                "monitoring_interval": 30000,
+                "aggregation_window": 300000,
+                "trend_analysis": true
+              },
+              "metric": {
+                "collection_interval": 15000,
+                "evaluation_window": 300000,
+                "anomaly_detection": true
+              }
+            },
+            "healthCheckSchedules": {
+              "frequent": {
+                "interval": 30,
+                "checks": ["liveness", "readiness", "connectivity"]
+              },
+              "regular": {
+                "interval": 300,
+                "checks": ["latency", "functionality", "resource"]
+              },
+              "comprehensive": {
+                "interval": 3600,
+                "checks": ["performance", "metric", "deep_validation"]
+              }
+            },
+            "alertingConfiguration": {
+              "criticalThreshold": 95,
+              "warningThreshold": 80,
+              "alertCooldown": 300,
+              "notificationChannels": ["slack", "email", "pagerduty"],
+              "escalationPolicy": {
+                "level1": {
+                  "recipients": ["oncall-engineer@todo-app.com"],
+                  "timeout": 300
+                },
+                "level2": {
+                  "recipients": ["engineering-manager@todo-app.com"],
+                  "timeout": 900
+                },
+                "level3": {
+                  "recipients": ["cto@todo-app.com"],
+                  "timeout": 1800
+                }
+              }
+            },
+            "reporting": {
+              "formats": ["json", "html", "pdf"],
+              "retention": 90,
+              "distribution": {
+                "recipients": [
+                  "engineering-team@todo-app.com",
+                  "devops-team@todo-app.com",
+                  "product-team@todo-app.com"
+                ],
+                "schedule": "weekly"
+              }
+            }
+          }
+        }
+  health-check-implementation.yaml: |
+    # Implementation of health check framework
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: health-check-agent
+      namespace: monitoring
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: health-check-agent
+      template:
+        metadata:
+          labels:
+            app: health-check-agent
+        spec:
+          serviceAccountName: health-check-sa
+          containers:
+          - name: health-check-agent
+            image: python:3.11-slim
+            command:
+            - /bin/bash
+            - -c
+            - |
+              pip install requests kubernetes redis psycopg2-binary kafka-python flask
+              
+              cat << 'EOF' > /app/health_checker.py
+              import requests
+              import time
+              import logging
+              import json
+              from kubernetes import client, config
+              from kubernetes.client.rest import ApiException
+              import redis
+              import psycopg2
+              from kafka import KafkaProducer, KafkaConsumer
+              from flask import Flask, jsonify, request
+              import threading
+              import queue
+              from datetime import datetime
+              
+              # Configure logging
+              logging.basicConfig(
+                  level=logging.INFO,
+                  format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+              )
+              logger = logging.getLogger(__name__)
+              
+              class HealthChecker:
+                  def __init__(self):
+                      self.results = {}
+                      self.check_queue = queue.Queue()
+                      self.running = True
+                      self.setup_kubernetes_client()
+                      self.setup_database_connection()
+                      self.setup_cache_connection()
+                      self.setup_messaging_connection()
+                  
+                  def setup_kubernetes_client(self):
+                      try:
+                          config.load_incluster_config()
+                          self.k8s_client = client.CoreV1Api()
+                          logger.info("Kubernetes client configured successfully")
+                      except Exception as e:
+                          logger.error(f"Failed to configure Kubernetes client: {e}")
+                          # Try loading from kubeconfig file
+                          try:
+                              config.load_kube_config()
+                              self.k8s_client = client.CoreV1Api()
+                              logger.info("Kubernetes client configured from kubeconfig")
+                          except Exception as e2:
+                              logger.error(f"Failed to configure Kubernetes client from kubeconfig: {e2}")
+                              self.k8s_client = None
+                  
+                  def setup_database_connection(self):
+                      try:
+                          self.db_conn = psycopg2.connect(
+                              host="todo-db",
+                              database="todo_db",
+                              user="todo_user",
+                              password="todo_password"
+                          )
+                          logger.info("Database connection established")
+                      except Exception as e:
+                          logger.error(f"Failed to establish database connection: {e}")
+                          self.db_conn = None
+                  
+                  def setup_cache_connection(self):
+                      try:
+                          self.cache_client = redis.Redis(
+                              host="todo-cache",
+                              port=6379,
+                              db=0,
+                              decode_responses=True
+                          )
+                          logger.info("Cache connection established")
+                      except Exception as e:
+                          logger.error(f"Failed to establish cache connection: {e}")
+                          self.cache_client = None
+                  
+                  def setup_messaging_connection(self):
+                      try:
+                          self.kafka_producer = KafkaProducer(
+                              bootstrap_servers=['kafka:9092'],
+                              value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                          )
+                          logger.info("Kafka producer connection established")
+                      except Exception as e:
+                          logger.error(f"Failed to establish Kafka connection: {e}")
+                          self.kafka_producer = None
+                  
+                  def check_application_health(self):
+                      try:
+                          response = requests.get("http://todo-app:8080/healthz", timeout=5)
+                          status = response.status_code == 200
+                          response_time = response.elapsed.total_seconds() * 1000
+                          
+                          return {
+                              "status": status,
+                              "response_time": response_time,
+                              "timestamp": datetime.utcnow().isoformat(),
+                              "details": response.json() if response.headers.get('content-type', '').startswith('application/json') else None
+                          }
+                      except Exception as e:
+                          logger.error(f"Application health check failed: {e}")
+                          return {
+                              "status": False,
+                              "error": str(e),
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def check_dapr_health(self):
+                      try:
+                          response = requests.get("http://localhost:3500/v1.0/healthz", timeout=5)
+                          status = response.status_code == 200
+                          response_time = response.elapsed.total_seconds() * 1000
+                          
+                          return {
+                              "status": status,
+                              "response_time": response_time,
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      except Exception as e:
+                          logger.error(f"Dapr health check failed: {e}")
+                          return {
+                              "status": False,
+                              "error": str(e),
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def check_database_health(self):
+                      if not self.db_conn:
+                          return {
+                              "status": False,
+                              "error": "No database connection",
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      
+                      try:
+                          cursor = self.db_conn.cursor()
+                          start_time = time.time()
+                          cursor.execute("SELECT 1")
+                          result = cursor.fetchone()
+                          response_time = (time.time() - start_time) * 1000
+                          
+                          cursor.close()
+                          
+                          return {
+                              "status": result is not None,
+                              "response_time": response_time,
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      except Exception as e:
+                          logger.error(f"Database health check failed: {e}")
+                          return {
+                              "status": False,
+                              "error": str(e),
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def check_cache_health(self):
+                      if not self.cache_client:
+                          return {
+                              "status": False,
+                              "error": "No cache connection",
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      
+                      try:
+                          start_time = time.time()
+                          test_key = f"health_check_{int(time.time())}"
+                          self.cache_client.setex(test_key, 10, "health_check_value")
+                          retrieved_value = self.cache_client.get(test_key)
+                          response_time = (time.time() - start_time) * 1000
+                          
+                          return {
+                              "status": retrieved_value == "health_check_value",
+                              "response_time": response_time,
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      except Exception as e:
+                          logger.error(f"Cache health check failed: {e}")
+                          return {
+                              "status": False,
+                              "error": str(e),
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def check_kafka_health(self):
+                      if not self.kafka_producer:
+                          return {
+                              "status": False,
+                              "error": "No Kafka connection",
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      
+                      try:
+                          # Test producing a message
+                          test_topic = "health-check-test"
+                          test_message = {
+                              "timestamp": datetime.utcnow().isoformat(),
+                              "test_id": f"health_check_{int(time.time())}"
+                          }
+                          
+                          start_time = time.time()
+                          future = self.kafka_producer.send(test_topic, test_message)
+                          record_metadata = future.get(timeout=10)
+                          response_time = (time.time() - start_time) * 1000
+                          
+                          return {
+                              "status": record_metadata is not None,
+                              "response_time": response_time,
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                      except Exception as e:
+                          logger.error(f"Kafka health check failed: {e}")
+                          return {
+                              "status": False,
+                              "error": str(e),
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def run_health_check(self, check_type):
+                      check_functions = {
+                          "application": self.check_application_health,
+                          "dapr": self.check_dapr_health,
+                          "database": self.check_database_health,
+                          "cache": self.check_cache_health,
+                          "kafka": self.check_kafka_health
+                      }
+                      
+                      if check_type in check_functions:
+                          return check_functions[check_type]()
+                      else:
+                          return {
+                              "status": False,
+                              "error": f"Unknown check type: {check_type}",
+                              "timestamp": datetime.utcnow().isoformat()
+                          }
+                  
+                  def run_all_checks(self):
+                      results = {}
+                      for check_type in ["application", "dapr", "database", "cache", "kafka"]:
+                          results[check_type] = self.run_health_check(check_type)
+                      return results
+                  
+                  def start_periodic_checks(self):
+                      def periodic_check_worker():
+                          while self.running:
+                              try:
+                                  results = self.run_all_checks()
+                                  self.results[datetime.utcnow().isoformat()] = results
+                                  
+                                  # Keep only last 100 results
+                                  if len(self.results) > 100:
+                                      oldest_key = min(self.results.keys())
+                                      del self.results[oldest_key]
+                                  
+                                  time.sleep(30)  # Check every 30 seconds
+                              except Exception as e:
+                                  logger.error(f"Error in periodic checks: {e}")
+                                  time.sleep(30)
+                      
+                      thread = threading.Thread(target=periodic_check_worker)
+                      thread.daemon = True
+                      thread.start()
+                  
+                  def get_latest_results(self):
+                      if not self.results:
+                          return {}
+                      latest_key = max(self.results.keys())
+                      return self.results[latest_key]
+              
+              # Flask app for health check API
+              app = Flask(__name__)
+              health_checker = HealthChecker()
+              
+              @app.route('/health', methods=['GET'])
+              def get_health():
+                  results = health_checker.get_latest_results()
+                  overall_status = all(result.get('status', False) for result in results.values())
+                  
+                  return jsonify({
+                      "overall_status": "healthy" if overall_status else "unhealthy",
+                      "timestamp": datetime.utcnow().isoformat(),
+                      "checks": results
+                  })
+              
+              @app.route('/health/<check_type>', methods=['GET'])
+              def get_specific_health(check_type):
+                  if check_type in ["application", "dapr", "database", "cache", "kafka"]:
+                      result = health_checker.run_health_check(check_type)
+                      return jsonify(result)
+                  else:
+                      return jsonify({"error": f"Invalid check type: {check_type}"}), 400
+              
+              @app.route('/health/history', methods=['GET'])
+              def get_health_history():
+                  return jsonify(health_checker.results)
+              
+              if __name__ == '__main__':
+                  health_checker.start_periodic_checks()
+                  app.run(host='0.0.0.0', port=8080)
+              EOF
+              
+              python /app/health_checker.py
+            env:
+            - name: PYTHONPATH
+              value: /app
+            - name: TODO_DB_HOST
+              value: "todo-db"
+            - name: TODO_DB_NAME
+              value: "todo_db"
+            - name: TODO_DB_USER
+              value: "todo_user"
+            - name: TODO_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: todo-db-secrets
+                  key: password
+            - name: TODO_CACHE_HOST
+              value: "todo-cache"
+            - name: KAFKA_BROKERS
+              value: "kafka:9092"
+            - name: HEALTH_CHECK_INTERVAL
+              value: "30"
+            ports:
+            - containerPort: 8080
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 5
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "200m"
+      serviceAccountName: health-check-sa
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: health-check-agent-svc
+      namespace: monitoring
+    spec:
+      selector:
+        app: health-check-agent
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+    ---
+    apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: health-check-agent-network-policy
+      namespace: monitoring
+    spec:
+      podSelector:
+        matchLabels:
+          app: health-check-agent
+      policyTypes:
+      - Ingress
+      - Egress
+      ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              role: monitoring-agent
+        ports:
+        - protocol: TCP
+          port: 8080
+      egress:
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: todo-app
+        ports:
+        - protocol: TCP
+          port: 8080  # Todo app
+        - protocol: TCP
+          port: 3500  # Dapr
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: database
+        ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: cache
+        ports:
+        - protocol: TCP
+          port: 6379  # Redis
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: messaging
+        ports:
+        - protocol: TCP
+          port: 9092  # Kafka
+  validation-framework-config.yaml: |
+    # Configuration for the validation framework
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: validation-framework-config
+      namespace: validation
+    data:
+      validation-rules.json: |
+        {
+          "validationFramework": {
+            "version": "1.0.0",
+            "schemas": {
+              "todoSchema": {
+                "type": "object",
+                "required": ["id", "title", "createdAt", "updatedAt"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "completed": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "critical"]
+                  },
+                  "dueDate": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
+                    },
+                    "maxItems": 10
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              },
+              "userSchema": {
+                "type": "object",
+                "required": ["id", "email", "createdAt"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "preferences": {
+                    "type": "object",
+                    "properties": {
+                      "theme": {
+                        "type": "string",
+                        "enum": ["light", "dark", "auto"]
+                      },
+                      "language": {
+                        "type": "string",
+                        "pattern": "^[a-z]{2}(-[A-Z]{2})?$"
+                      },
+                      "notifications": {
+                        "type": "object",
+                        "properties": {
+                          "email": {"type": "boolean"},
+                          "push": {"type": "boolean"},
+                          "sms": {"type": "boolean"}
+                        }
+                      }
+                    }
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            },
+            "businessRules": {
+              "todoRules": [
+                {
+                  "name": "dueDateInFuture",
+                  "description": "Due date must be in the future",
+                  "expression": "todo.dueDate > now()",
+                  "severity": "error",
+                  "enabled": true
+                },
+                {
+                  "name": "titleNotEmpty",
+                  "description": "Title cannot be empty",
+                  "expression": "trim(todo.title) != ''",
+                  "severity": "error",
+                  "enabled": true
+                },
+                {
+                  "name": "reasonablePriority",
+                  "description": "Priority should be reasonable for task complexity",
+                  "expression": "todo.priority != 'critical' || estimateComplexity(todo) > 5",
+                  "severity": "warning",
+                  "enabled": true
+                }
+              ],
+              "userRules": [
+                {
+                  "name": "validEmail",
+                  "description": "Email must be valid",
+                  "expression": "isValidEmail(user.email)",
+                  "severity": "error",
+                  "enabled": true
+                },
+                {
+                  "name": "uniqueEmail",
+                  "description": "Email must be unique",
+                  "expression": "isUniqueEmail(user.email)",
+                  "severity": "error",
+                  "enabled": true
+                }
+              ]
+            },
+            "dataIntegrityChecks": {
+              "consistencyChecks": [
+                {
+                  "name": "referentialIntegrity",
+                  "description": "Check that foreign key references are valid",
+                  "query": "SELECT COUNT(*) FROM todos WHERE user_id NOT IN (SELECT id FROM users)",
+                  "threshold": 0,
+                  "action": "alert"
+                },
+                {
+                  "name": "duplicateCheck",
+                  "description": "Check for duplicate entries",
+                  "query": "SELECT user_id, COUNT(*) FROM todos GROUP BY user_id, title HAVING COUNT(*) > 1",
+                  "threshold": 0,
+                  "action": "alert"
+                }
+              ],
+              "accuracyChecks": [
+                {
+                  "name": "dateConsistency",
+                  "description": "Check that dates are logically consistent",
+                  "query": "SELECT COUNT(*) FROM todos WHERE createdAt > updatedAt",
+                  "threshold": 0,
+                  "action": "alert"
+                },
+                {
+                  "name": "statusTransitions",
+                  "description": "Check that status transitions are valid",
+                  "query": "SELECT COUNT(*) FROM todos WHERE completed = true AND createdAt > completedAt",
+                  "threshold": 0,
+                  "action": "alert"
+                }
+              ]
+            },
+            "performanceValidation": {
+              "responseTimeValidation": {
+                "checks": [
+                  {
+                    "name": "apiResponseTime",
+                    "endpoint": "/api/v1/todos",
+                    "method": "GET",
+                    "p95Threshold": 200,
+                    "p99Threshold": 500,
+                    "enabled": true
+                  },
+                  {
+                    "name": "databaseQueryTime",
+                    "query": "SELECT * FROM todos WHERE user_id = ? LIMIT 10",
+                    "threshold": 100,
+                    "enabled": true
+                  }
+                ]
+              },
+              "throughputValidation": {
+                "checks": [
+                  {
+                    "name": "requestRate",
+                    "endpoint": "/api/v1/todos",
+                    "method": "POST",
+                    "targetRPS": 100,
+                    "duration": 300,
+                    "enabled": true
+                  }
+                ]
+              }
+            },
+            "securityValidation": {
+              "authenticationChecks": [
+                {
+                  "name": "tokenValidation",
+                  "description": "Validate JWT tokens",
+                  "validator": "jwtValidator",
+                  "required": true,
+                  "enabled": true
+                },
+                {
+                  "name": "permissionCheck",
+                  "description": "Check user permissions",
+                  "validator": "rbacValidator",
+                  "required": true,
+                  "enabled": true
+                }
+              ],
+              "dataProtectionChecks": [
+                {
+                  "name": "sensitiveDataMasking",
+                  "description": "Ensure sensitive data is masked in logs",
+                  "validator": "maskingValidator",
+                  "required": true,
+                  "enabled": true
+                },
+                {
+                  "name": "encryptionAtRest",
+                  "description": "Validate data encryption at rest",
+                  "validator": "encryptionValidator",
+                  "required": true,
+                  "enabled": true
+                }
+              ]
+            }
+          }
+        }
+      validation-engine-config.yaml: |
+        # Validation Engine Configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: validation-engine-config
+          namespace: validation
+        data:
+          validation-engine.properties: |
+            # Validation Engine Configuration Properties
+            
+            # Schema validation settings
+            schema.validation.enabled=true
+            schema.validation.cache.enabled=true
+            schema.validation.cache.ttl.minutes=60
+            schema.validation.concurrent.threads=10
+            
+            # Business rule validation settings
+            business.rule.validation.enabled=true
+            business.rule.validation.concurrent.threads=5
+            business.rule.validation.cache.enabled=true
+            business.rule.validation.cache.ttl.minutes=30
+            
+            # Data integrity validation settings
+            data.integrity.validation.enabled=true
+            data.integrity.validation.schedule=0 */30 * * * ?
+            data.integrity.validation.concurrent.threads=3
+            
+            # Performance validation settings
+            performance.validation.enabled=true
+            performance.validation.concurrent.threads=5
+            performance.validation.sample.rate=0.1
+            performance.validation.metrics.collection=true
+            
+            # Security validation settings
+            security.validation.enabled=true
+            security.validation.concurrent.threads=3
+            security.validation.cache.enabled=true
+            security.validation.cache.ttl.minutes=15
+            
+            # Validation result storage
+            validation.result.storage.type=database
+            validation.result.storage.database.url=jdbc:postgresql://validation-db:5432/validation_results
+            validation.result.storage.database.username=validation_user
+            validation.result.storage.database.password=${VALIDATION_DB_PASSWORD}
+            validation.result.storage.retention.days=90
+            
+            # Validation result processing
+            validation.result.processor.batch.size=100
+            validation.result.processor.batch.timeout.ms=5000
+            validation.result.processor.error.handling=retry
+            validation.result.processor.error.max.retries=3
+            validation.result.processor.error.retry.delay.ms=1000
+            
+            # Validation result notification
+            validation.result.notification.enabled=true
+            validation.result.notification.types=alert,report,metrics
+            validation.result.notification.alert.threshold=0.05
+            validation.result.notification.report.schedule=0 0 9 * * ?
+            validation.result.notification.metrics.push.interval=60
+            
+            # Validation engine monitoring
+            validation.engine.monitoring.enabled=true
+            validation.engine.monitoring.metrics.prefix=todo.validation
+            validation.engine.monitoring.health.check.interval=30
+            validation.engine.monitoring.status.storage=redis
+            validation.engine.monitoring.status.storage.url=redis://validation-redis:6379/0
+            
+            # Validation engine security
+            validation.engine.security.authentication.required=true
+            validation.engine.security.authorization.required=true
+            validation.engine.security.encryption.enabled=true
+            validation.engine.security.audit.logging=true
+            validation.engine.security.token.expiry.minutes=60
+            validation.engine.security.rate.limiting.enabled=true
+            validation.engine.security.rate.limiting.requests.per.minute=1000
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: validation-engine
+      namespace: validation
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: validation-engine
+      template:
+        metadata:
+          labels:
+            app: validation-engine
+        spec:
+          serviceAccountName: validation-sa
+          containers:
+          - name: validation-engine
+            image: openjdk:17-jre-slim
+            command:
+            - java
+            - -jar
+            - /app/validation-engine.jar
+            - --config=/etc/validation/validation-engine.properties
+            env:
+            - name: VALIDATION_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: validation-db-secrets
+                  key: password
+            - name: VALIDATION_ENGINE_MODE
+              value: "production"
+            - name: VALIDATION_ENGINE_THREADS
+              value: "20"
+            - name: VALIDATION_ENGINE_TIMEOUT
+              value: "30000"
+            volumeMounts:
+            - name: validation-config
+              mountPath: /etc/validation
+            - name: validation-rules
+              mountPath: /etc/validation/rules
+            ports:
+            - containerPort: 8080
+            livenessProbe:
+              httpGet:
+                path: /actuator/health
+                port: 8080
+              initialDelaySeconds: 60
+              periodSeconds: 30
+            readinessProbe:
+              httpGet:
+                path: /actuator/health
+                port: 8080
+              initialDelaySeconds: 10
+              periodSeconds: 10
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+          volumes:
+          - name: validation-config
+            configMap:
+              name: validation-engine-config
+          - name: validation-rules
+            configMap:
+              name: validation-framework-config
+          restartPolicy: Always
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: validation-engine-svc
+      namespace: validation
+    spec:
+      selector:
+        app: validation-engine
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+  health-validation-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "System Health & Validation Dashboard",
+        "tags": ["health", "validation", "monitoring"],
+        "style": "dark",
+        "timezone": "browser",
+        "refresh": "5s",
+        "schemaVersion": 16,
+        "version": 1,
+        "time": {
+          "from": "now-15m",
+          "to": "now"
+        },
+        "timepicker": {
+          "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+          "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+        },
+        "templating": {
+          "list": [
+            {
+              "allValue": null,
+              "current": {
+                "selected": false,
+                "text": "All",
+                "value": "$__all"
+              },
+              "datasource": "Prometheus",
+              "definition": "label_values(component)",
+              "hide": 0,
+              "includeAll": true,
+              "label": "Component",
+              "multi": true,
+              "name": "component",
+              "options": [],
+              "query": "label_values(component)",
+              "refresh": 1,
+              "regex": "",
+              "skipUrlSync": false,
+              "sort": 0,
+              "tagValuesQuery": "",
+              "tags": [],
+              "tagsQuery": "",
+              "type": "query",
+              "useTags": false
+            },
+            {
+              "allValue": null,
+              "current": {
+                "selected": false,
+                "text": "All",
+                "value": "$__all"
+              },
+              "datasource": "Prometheus",
+              "definition": "label_values(validation_type)",
+              "hide": 0,
+              "includeAll": true,
+              "label": "Validation Type",
+              "multi": true,
+              "name": "validation_type",
+              "options": [],
+              "query": "label_values(validation_type)",
+              "refresh": 1,
+              "regex": "",
+              "skipUrlSync": false,
+              "sort": 0,
+              "tagValuesQuery": "",
+              "tags": [],
+              "tagsQuery": "",
+              "type": "query",
+              "useTags": false
+            }
+          ]
+        },
+        "annotations": {
+          "list": [
+            {
+              "builtIn": 1,
+              "datasource": "-- Grafana --",
+              "enable": true,
+              "hide": true,
+              "iconColor": "rgba(0, 211, 255, 1)",
+              "name": "Annotations & Alerts",
+              "type": "dashboard"
+            }
+          ]
+        },
+        "panels": [
+          {
+            "collapsed": false,
+            "gridPos": {
+              "h": 1,
+              "w": 24,
+              "x": 0,
+              "y": 0
+            },
+            "id": 18,
+            "panels": [],
+            "title": "System Health Overview",
+            "type": "row"
+          },
+          {
+            "cacheTimeout": null,
+            "colorBackground": false,
+            "colorValue": true,
+            "colors": [
+              "#d44a3a",
+              "rgba(237, 129, 40, 0.89)",
+              "#299c46"
+            ],
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "format": "none",
+            "gauge": {
+              "maxValue": 100,
+              "minValue": 0,
+              "show": false,
+              "thresholdLabels": false,
+              "thresholdMarkers": true
+            },
+            "gridPos": {
+              "h": 5,
+              "w": 4,
+              "x": 0,
+              "y": 1
+            },
+            "id": 2,
+            "interval": null,
+            "links": [],
+            "mappingType": 1,
+            "mappingTypes": [
+              {
+                "name": "value to text",
+                "value": 1
+              },
+              {
+                "name": "range to text",
+                "value": 2
+              }
+            ],
+            "maxDataPoints": 100,
+            "nullPointMode": "connected",
+            "nullText": null,
+            "postfix": "%",
+            "postfixFontSize": "50%",
+            "prefix": "",
+            "prefixFontSize": "50%",
+            "rangeMaps": [
+              {
+                "from": "null",
+                "text": "N/A",
+                "to": "null"
+              }
+            ],
+            "sparkline": {
+              "fillColor": "rgba(31, 118, 189, 0.18)",
+              "full": false,
+              "lineColor": "rgb(31, 120, 193)",
+              "show": false
+            },
+            "tableColumn": "",
+            "targets": [
+              {
+                "expr": "avg(todo_app_health_status) * 100",
+                "interval": "",
+                "legendFormat": "",
+                "refId": "A"
+              }
+            ],
+            "thresholds": "70,90",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Overall Health",
+            "type": "singlestat",
+            "valueFontSize": "80%",
+            "valueMaps": [
+              {
+                "op": "=",
+                "text": "N/A",
+                "value": "null"
+              }
+            ],
+            "valueName": "current"
+          },
+          {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+              "h": 10,
+              "w": 10,
+              "x": 4,
+              "y": 1
+            },
+            "hiddenSeries": false,
+            "id": 4,
+            "legend": {
+              "avg": false,
+              "current": false,
+              "max": false,
+              "min": false,
+              "show": true,
+              "total": false,
+              "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null",
+            "options": {
+              "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "7.4.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+              {
+                "expr": "todo_app_component_health_status{component=~\"$component\"}",
+                "interval": "",
+                "legendFormat": "{{component}}",
+                "refId": "A"
+              }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Component Health Status",
+            "tooltip": {
+              "shared": true,
+              "sort": 0,
+              "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+              "buckets": null,
+              "mode": "time",
+              "name": null,
+              "show": true,
+              "values": []
+            },
+            "yaxes": [
+              {
+                "format": "short",
+                "label": "Health Status (1=Healthy, 0=Unhealthy)",
+                "logBase": 1,
+                "max": "1",
+                "min": "0",
+                "show": true
+              },
+              {
+                "format": "short",
+                "label": null,
+                "logBase": 1,
+                "max": null,
+                "min": null,
+                "show": true
+              }
+            ],
+            "yaxis": {
+              "align": false,
+              "alignLevel": null
+            }
+          },
+          {
+            "cacheTimeout": null,
+            "colorBackground": false,
+            "colorValue": true,
+            "colors": [
+              "#299c46",
+              "rgba(237, 129, 40, 0.89)",
+              "#d44a3a"
+            ],
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "format": "none",
+            "gauge": {
+              "maxValue": 100,
+              "minValue": 0,
+              "show": false,
+              "thresholdLabels": false,
+              "thresholdMarkers": true
+            },
+            "gridPos": {
+              "h": 5,
+              "w": 5,
+              "x": 14,
+              "y": 1
+            },
+            "id": 6,
+            "interval": null,
+            "links": [],
+            "mappingType": 1,
+            "mappingTypes": [
+              {
+                "name": "value to text",
+                "value": 1
+              },
+              {
+                "name": "range to text",
+                "value": 2
+              }
+            ],
+            "maxDataPoints": 100,
+            "nullPointMode": "connected",
+            "nullText": null,
+            "postfix": "",
+            "postfixFontSize": "50%",
+            "prefix": "",
+            "prefixFontSize": "50%",
+            "rangeMaps": [
+              {
+                "from": "null",
+                "text": "N/A",
+                "to": "null"
+              }
+            ],
+            "sparkline": {
+              "fillColor": "rgba(31, 118, 189, 0.18)",
+              "full": false,
+              "lineColor": "rgb(31, 120, 193)",
+              "show": false
+            },
+            "tableColumn": "",
+            "targets": [
+              {
+                "expr": "count(todo_app_validation_result_total{status=\"failed\"})",
+                "interval": "",
+                "legendFormat": "Failed Validations",
+                "refId": "A"
+              }
+            ],
+            "thresholds": "1,5",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Failed Validations",
+            "type": "singlestat",
+            "valueFontSize": "80%",
+            "valueMaps": [
+              {
+                "op": "=",
+                "text": "N/A",
+                "value": "null"
+              }
+            ],
+            "valueName": "current"
+          },
+          {
+            "cacheTimeout": null,
+            "colorBackground": false,
+            "colorValue": true,
+            "colors": [
+              "#d44a3a",
+              "rgba(237, 129, 40, 0.89)",
+              "#299c46"
+            ],
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "format": "none",
+            "gauge": {
+              "maxValue": 100,
+              "minValue": 0,
+              "show": false,
+              "thresholdLabels": false,
+              "thresholdMarkers": true
+            },
+            "gridPos": {
+              "h": 5,
+              "w": 5,
+              "x": 19,
+              "y": 1
+            },
+            "id": 8,
+            "interval": null,
+            "links": [],
+            "mappingType": 1,
+            "mappingTypes": [
+              {
+                "name": "value to text",
+                "value": 1
+              },
+              {
+                "name": "range to text",
+                "value": 2
+              }
+            ],
+            "maxDataPoints": 100,
+            "nullPointMode": "connected",
+            "nullText": null,
+            "postfix": "",
+            "postfixFontSize": "50%",
+            "prefix": "",
+            "prefixFontSize": "50%",
+            "rangeMaps": [
+              {
+                "from": "null",
+                "text": "N/A",
+                "to": "null"
+              }
+            ],
+            "sparkline": {
+              "fillColor": "rgba(31, 118, 189, 0.18)",
+              "full": false,
+              "lineColor": "rgb(31, 120, 193)",
+              "show": false
+            },
+            "tableColumn": "",
+            "targets": [
+              {
+                "expr": "sum(todo_app_validation_result_total) - sum(todo_app_validation_result_total{status=\"failed\"})",
+                "interval": "",
+                "legendFormat": "Passed Validations",
+                "refId": "A"
+              }
+            ],
+            "thresholds": "70,90",
+            "timeFrom": null,
+            "timeShift": null,
+            "title": "Passed Validations",
+            "type": "singlestat",
+            "valueFontSize": "80%",
+            "valueMaps": [
+              {
+                "op": "=",
+                "text": "N/A",
+                "value": "null"
+              }
+            ],
+            "valueName": "current"
+          },
+          {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+              "h": 5,
+              "w": 10,
+              "x": 14,
+              "y": 6
+            },
+            "hiddenSeries": false,
+            "id": 10,
+            "legend": {
+              "avg": false,
+              "current": false,
+              "max": false,
+              "min": false,
+              "show": true,
+              "total": false,
+              "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null",
+            "options": {
+              "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "7.4.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+              {
+                "expr": "rate(todo_app_validation_result_total[5m])",
+                "interval": "",
+                "legendFormat": "{{validation_type}} - {{status}}",
+                "refId": "A"
+              }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Validation Results Rate",
+            "tooltip": {
+              "shared": true,
+              "sort": 0,
+              "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+              "buckets": null,
+              "mode": "time",
+              "name": null,
+              "show": true,
+              "values": []
+            },
+            "yaxes": [
+              {
+                "format": "short",
+                "label": "Validations per second",
+                "logBase": 1,
+                "max": null,
+                "min": "0",
+                "show": true
+              },
+              {
+                "format": "short",
+                "label": null,
+                "logBase": 1,
+                "max": null,
+                "min": null,
+                "show": true
+              }
+            ],
+            "yaxis": {
+              "align": false,
+              "alignLevel": null
+            }
+          },
+          {
+            "collapsed": false,
+            "gridPos": {
+              "h": 1,
+              "w": 24,
+              "x": 0,
+              "y": 11
+            },
+            "id": 12,
+            "panels": [],
+            "title": "Validation Details",
+            "type": "row"
+          },
+          {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 0,
+              "y": 12
+            },
+            "hiddenSeries": false,
+            "id": 14,
+            "legend": {
+              "avg": false,
+              "current": false,
+              "max": false,
+              "min": false,
+              "show": true,
+              "total": false,
+              "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null",
+            "options": {
+              "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "7.4.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+              {
+                "expr": "todo_app_validation_duration_seconds{validation_type=~\"$validation_type\"}",
+                "interval": "",
+                "legendFormat": "{{validation_type}} - {{quantile}}",
+                "refId": "A"
+              }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Validation Duration",
+            "tooltip": {
+              "shared": true,
+              "sort": 0,
+              "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+              "buckets": null,
+              "mode": "time",
+              "name": null,
+              "show": true,
+              "values": []
+            },
+            "yaxes": [
+              {
+                "format": "s",
+                "label": "Duration (seconds)",
+                "logBase": 1,
+                "max": null,
+                "min": "0",
+                "show": true
+              },
+              {
+                "format": "short",
+                "label": null,
+                "logBase": 1,
+                "max": null,
+                "min": null,
+                "show": true
+              }
+            ],
+            "yaxis": {
+              "align": false,
+              "alignLevel": null
+            }
+          },
+          {
+            "aliasColors": {},
+            "bars": false,
+            "dashLength": 10,
+            "dashes": false,
+            "datasource": "Prometheus",
+            "fieldConfig": {
+              "defaults": {
+                "custom": {}
+              },
+              "overrides": []
+            },
+            "fill": 1,
+            "fillGradient": 0,
+            "gridPos": {
+              "h": 8,
+              "w": 12,
+              "x": 12,
+              "y": 12
+            },
+            "hiddenSeries": false,
+            "id": 16,
+            "legend": {
+              "avg": false,
+              "current": false,
+              "max": false,
+              "min": false,
+              "show": true,
+              "total": false,
+              "values": false
+            },
+            "lines": true,
+            "linewidth": 1,
+            "nullPointMode": "null",
+            "options": {
+              "alertThreshold": true
+            },
+            "percentage": false,
+            "pluginVersion": "7.4.3",
+            "pointradius": 2,
+            "points": false,
+            "renderer": "flot",
+            "seriesOverrides": [],
+            "spaceLength": 10,
+            "stack": false,
+            "steppedLine": false,
+            "targets": [
+              {
+                "expr": "sum(increase(todo_app_validation_error_total[1h])) by (validation_type, error_type)",
+                "interval": "",
+                "legendFormat": "{{validation_type}} - {{error_type}}",
+                "refId": "A"
+              }
+            ],
+            "thresholds": [],
+            "timeFrom": null,
+            "timeRegions": [],
+            "timeShift": null,
+            "title": "Validation Errors by Type",
+            "tooltip": {
+              "shared": true,
+              "sort": 0,
+              "value_type": "individual"
+            },
+            "type": "graph",
+            "xaxis": {
+              "buckets": null,
+              "mode": "time",
+              "name": null,
+              "show": true,
+              "values": []
+            },
+            "yaxes": [
+              {
+                "format": "short",
+                "label": "Error Count",
+                "logBase": 1,
+                "max": null,
+                "min": "0",
+                "show": true
+              },
+              {
+                "format": "short",
+                "label": null,
+                "logBase": 1,
+                "max": null,
+                "min": null,
+                "show": true
+              }
+            ],
+            "yaxis": {
+              "align": false,
+              "alignLevel": null
+            }
+          }
+        ],
+        "refresh": "5s",
+        "schemaVersion": 27,
+        "style": "dark",
+        "tags": ["todo-app", "health", "validation", "monitoring"],
+        "time": {
+          "from": "now-15m",
+          "to": "now"
+        },
+        "timepicker": {},
+        "timezone": "",
+        "title": "Todo App Health & Validation Dashboard",
+        "uid": "todo-health-validation",
+        "version": 1
+      }
+    }

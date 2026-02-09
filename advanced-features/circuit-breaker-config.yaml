@@ -1,0 +1,826 @@
+# Circuit Breaker Patterns for Service Communications
+# Configuration for circuit breaker patterns in service-to-service communication
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: circuit-breaker-config
+  namespace: todo-app
+data:
+  istio-circuit-breaker.yaml: |
+    # Istio circuit breaker configuration
+    apiVersion: networking.istio.io/v1alpha3
+    kind: DestinationRule
+    metadata:
+      name: todo-app-destination-rule
+      namespace: todo-app
+    spec:
+      host: todo-app.todo-app.svc.cluster.local
+      trafficPolicy:
+        connectionPool:
+          tcp:
+            maxConnections: 100
+            connectTimeout: 30ms
+          http:
+            http1MaxPendingRequests: 10
+            http2MaxRequests: 100
+            maxRequestsPerConnection: 10
+            maxRetries: 3
+        outlierDetection:
+          consecutive5xxErrors: 10
+          interval: 30s
+          baseEjectionTime: 30s
+          maxEjectionPercent: 10
+          minHealthPercent: 50
+      subsets:
+      - name: v1
+        labels:
+          version: v1
+      - name: v2
+        labels:
+          version: v2
+    ---
+    apiVersion: networking.istio.io/v1alpha3
+    kind: VirtualService
+    metadata:
+      name: todo-app-virtual-service
+      namespace: todo-app
+    spec:
+      hosts:
+      - todo-app.todo-app.svc.cluster.local
+      http:
+      - match:
+        - headers:
+            canary:
+              exact: "always"
+        route:
+        - destination:
+            host: todo-app.todo-app.svc.cluster.local
+            subset: v2
+          weight: 100
+      - route:
+        - destination:
+            host: todo-app.todo-app.svc.cluster.local
+            subset: v1
+          weight: 100
+  dapr-circuit-breaker.yaml: |
+    # Dapr circuit breaker configuration
+    apiVersion: dapr.io/v1alpha1
+    kind: Configuration
+    metadata:
+      name: circuit-breaker-config
+      namespace: dapr-system
+    spec:
+      tracing:
+        samplingRate: "1"
+        zipkin:
+          endpointAddress: "http://jaeger-collector:9411/api/v2/spans"
+      httpPipeline:
+        handlers:
+        - name: circuit-breaker-middleware
+          type: middleware.http.circuitbreaker
+      features:
+      - name: AppHealthCheck
+        enabled: true
+    ---
+    apiVersion: dapr.io/v1alpha1
+    kind: Component
+    metadata:
+      name: circuit-breaker-middleware
+      namespace: todo-app
+    spec:
+      type: middleware.http.circuitbreaker
+      version: v1
+      metadata:
+      - name: maxRequestsPerTimeWindow
+        value: "100"
+      - name: timeWindowMs
+        value: "10000"
+      - name: timeoutMs
+        value: "1000"
+      - name: trip
+        value: "consecutiveFailures > 5"
+      - name: fallback
+        value: "defaultResponse"
+      - name: halfOpenAfterMs
+        value: "60000"
+    scopes:
+    - todo-app
+  circuit-breaker-middleware.yaml: |
+    # Custom circuit breaker middleware configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: circuit-breaker-middleware-config
+      namespace: todo-app
+    data:
+      circuit-breaker-config.json: |
+        {
+          "circuitBreakers": [
+            {
+              "name": "todo-app-api",
+              "host": "todo-app.todo-app.svc.cluster.local",
+              "port": 80,
+              "maxConcurrentRequests": 100,
+              "requestVolumeThreshold": 20,
+              "sleepWindowMs": 60000,
+              "errorThresholdPercentage": 50,
+              "timeoutMs": 5000,
+              "fallbackResponse": {
+                "status": 503,
+                "body": "{\"error\": \"Service temporarily unavailable\"}",
+                "headers": {
+                  "Content-Type": "application/json"
+                }
+              }
+            },
+            {
+              "name": "dapr-statestore",
+              "host": "dapr-statestore.dapr-system.svc.cluster.local",
+              "port": 80,
+              "maxConcurrentRequests": 50,
+              "requestVolumeThreshold": 10,
+              "sleepWindowMs": 30000,
+              "errorThresholdPercentage": 60,
+              "timeoutMs": 3000,
+              "fallbackResponse": {
+                "status": 503,
+                "body": "{\"error\": \"State store temporarily unavailable\"}",
+                "headers": {
+                  "Content-Type": "application/json"
+                }
+              }
+            },
+            {
+              "name": "kafka-broker",
+              "host": "kafka.kafka.svc.cluster.local",
+              "port": 9092,
+              "maxConcurrentRequests": 200,
+              "requestVolumeThreshold": 30,
+              "sleepWindowMs": 120000,
+              "errorThresholdPercentage": 40,
+              "timeoutMs": 10000,
+              "fallbackResponse": {
+                "status": 503,
+                "body": "{\"error\": \"Message broker temporarily unavailable\"}",
+                "headers": {
+                  "Content-Type": "application/json"
+                }
+              }
+            }
+          ]
+        }
+  application-circuit-breaker.yaml: |
+    # Application-level circuit breaker configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: application-circuit-breaker-config
+      namespace: todo-app
+    data:
+      application-circuit-breaker.properties: |
+        # Circuit breaker configuration for Todo App
+        # Circuit breaker settings for external API calls
+        circuit.breaker.external.api.enabled=true
+        circuit.breaker.external.api.failure.threshold=5
+        circuit.breaker.external.api.timeout.seconds=30
+        circuit.breaker.external.api.reset.timeout.seconds=60
+        circuit.breaker.external.api.fallback.enabled=true
+        circuit.breaker.external.api.fallback.response={"error": "External API temporarily unavailable"}
+        
+        # Circuit breaker settings for database connections
+        circuit.breaker.database.enabled=true
+        circuit.breaker.database.failure.threshold=3
+        circuit.breaker.database.timeout.seconds=10
+        circuit.breaker.database.reset.timeout.seconds=30
+        circuit.breaker.database.fallback.enabled=true
+        circuit.breaker.database.fallback.response={"error": "Database temporarily unavailable"}
+        
+        # Circuit breaker settings for message queue
+        circuit.breaker.message.queue.enabled=true
+        circuit.breaker.message.queue.failure.threshold=5
+        circuit.breaker.message.queue.timeout.seconds=15
+        circuit.breaker.message.queue.reset.timeout.seconds=45
+        circuit.breaker.message.queue.fallback.enabled=true
+        circuit.breaker.message.queue.fallback.response={"error": "Message queue temporarily unavailable"}
+        
+        # Circuit breaker settings for cache
+        circuit.breaker.cache.enabled=true
+        circuit.breaker.cache.failure.threshold=10
+        circuit.breaker.cache.timeout.seconds=5
+        circuit.breaker.cache.reset.timeout.seconds=15
+        circuit.breaker.cache.fallback.enabled=true
+        circuit.breaker.cache.fallback.response={"error": "Cache temporarily unavailable"}
+      circuit-breaker-beans.xml: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <beans xmlns="http://www.springframework.org/schema/beans"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="
+                   http://www.springframework.org/schema/beans
+                   http://www.springframework.org/schema/beans/spring-beans.xsd">
+        
+          <!-- Circuit Breaker Configuration -->
+          <bean id="circuitBreakerFactory" class="com.todoapp.circuitbreaker.CircuitBreakerFactory">
+            <property name="defaultFailureThreshold" value="5"/>
+            <property name="defaultTimeout" value="30000"/>
+            <property name="defaultResetTimeout" value="60000"/>
+          </bean>
+        
+          <!-- External API Circuit Breaker -->
+          <bean id="externalApiCircuitBreaker" factory-bean="circuitBreakerFactory" factory-method="createCircuitBreaker">
+            <constructor-arg value="external-api"/>
+            <constructor-arg value="5"/>
+            <constructor-arg value="30000"/>
+            <constructor-arg value="60000"/>
+          </bean>
+        
+          <!-- Database Circuit Breaker -->
+          <bean id="databaseCircuitBreaker" factory-bean="circuitBreakerFactory" factory-method="createCircuitBreaker">
+            <constructor-arg value="database"/>
+            <constructor-arg value="3"/>
+            <constructor-arg value="10000"/>
+            <constructor-arg value="30000"/>
+          </bean>
+        
+          <!-- Message Queue Circuit Breaker -->
+          <bean id="messageQueueCircuitBreaker" factory-bean="circuitBreakerFactory" factory-method="createCircuitBreaker">
+            <constructor-arg value="message-queue"/>
+            <constructor-arg value="5"/>
+            <constructor-arg value="15000"/>
+            <constructor-arg value="45000"/>
+          </bean>
+        </beans>
+  circuit-breaker-documentation.md: |
+    # Circuit Breaker Pattern Implementation
+    
+    ## Overview
+    The circuit breaker pattern prevents a cascade of failures in a distributed system by temporarily cutting off communication with a failing service. This implementation provides resilience for the Todo AI system.
+    
+    ## States
+    1. **CLOSED**: Normal operation, requests flow through
+    2. **OPEN**: Service is temporarily cut off, requests fail fast
+    3. **HALF-OPEN**: Testing if service has recovered
+    
+    ## Configuration Parameters
+    - **Failure Threshold**: Number of failures before opening the circuit
+    - **Timeout**: Time after which requests are considered failed
+    - **Reset Timeout**: Time to wait before transitioning to HALF-OPEN
+    - **Request Volume Threshold**: Minimum number of requests to evaluate circuit state
+    
+    ## Implementation
+    Circuit breakers are implemented at multiple levels:
+    - Infrastructure level (Istio)
+    - Service mesh level (Dapr)
+    - Application level (custom implementation)
+    
+    ## Monitoring
+    Circuit breaker metrics are monitored and alerted on:
+    - Circuit state changes
+    - Failure rates
+    - Request volumes
+    - Response times
+    
+    ## Fallback Strategies
+    When circuits are open, fallback strategies are employed:
+    - Return cached data
+    - Return default responses
+    - Use alternative services
+    - Graceful degradation
+  circuit-breaker-monitoring.yaml: |
+    # Monitoring configuration for circuit breakers
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: circuit-breaker-monitoring
+      namespace: monitoring
+    data:
+      prometheus-rules.yaml: |
+        groups:
+        - name: circuit-breaker-monitoring
+          rules:
+          - alert: CircuitBreakerOpen
+            expr: circuit_breaker_state{state="open"} == 1
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Circuit breaker is open"
+              description: "Circuit breaker {{ $labels.name }} in namespace {{ $labels.namespace }} has been open for more than 1 minute"
+          
+          - alert: HighFailureRate
+            expr: rate(circuit_breaker_failures_total[5m]) / rate(circuit_breaker_requests_total[5m]) > 0.5
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "High failure rate detected"
+              description: "Failure rate exceeded 50% for circuit breaker {{ $labels.name }} in namespace {{ $labels.namespace }}"
+          
+          - alert: CircuitBreakerTrippedFrequently
+            expr: increase(circuit_breaker_trip_total[10m]) > 5
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Circuit breaker tripping frequently"
+              description: "Circuit breaker {{ $labels.name }} in namespace {{ $labels.namespace }} has tripped more than 5 times in 10 minutes"
+      grafana-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Circuit Breaker Dashboard",
+            "tags": ["circuit-breaker", "resilience", "monitoring"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Namespace",
+                  "multi": true,
+                  "name": "namespace",
+                  "options": [],
+                  "query": "label_values(circuit_breaker_requests_total, namespace)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                },
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Circuit Breaker",
+                  "multi": true,
+                  "name": "circuit_breaker",
+                  "options": [],
+                  "query": "label_values(circuit_breaker_requests_total, name)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Circuit Breaker Status",
+                "type": "row"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "CLOSED",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "OPEN",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      },
+                      {
+                        "from": "",
+                        "id": 3,
+                        "operator": "",
+                        "text": "HALF-OPEN",
+                        "to": "",
+                        "type": 1,
+                        "value": "2"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 2
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 1
+                },
+                "id": 4,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "circuit_breaker_state{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}",
+                    "interval": "",
+                    "legendFormat": "{{name}}",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Circuit Breaker State",
+                "type": "stat"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(circuit_breaker_requests_total{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{name}} - Requests",
+                    "refId": "A"
+                  },
+                  {
+                    "expr": "rate(circuit_breaker_failures_total{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{name}} - Failures",
+                    "refId": "B"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Requests vs Failures Rate",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "reqps",
+                    "label": "Requests per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 9
+                },
+                "id": 8,
+                "panels": [],
+                "title": "Failure Analysis",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 10,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(circuit_breaker_failures_total{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}[5m]) / rate(circuit_breaker_requests_total{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}[5m]) * 100",
+                    "interval": "",
+                    "legendFormat": "{{name}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Failure Rate Percentage",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": "Failure Rate",
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 12,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "increase(circuit_breaker_trip_total{namespace=~\"$namespace\", name=~\"$circuit_breaker\"}[10m])",
+                    "interval": "",
+                    "legendFormat": "{{name}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Circuit Breaker Trips (Last 10m)",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "short",
+                    "label": "Number of Trips",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 27,
+            "style": "dark",
+            "tags": ["circuit-breaker", "resilience", "monitoring"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Circuit Breaker Dashboard",
+            "uid": "circuit-breaker-dashboard",
+            "version": 1
+          }
+        }

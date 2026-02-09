@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dapr-sidecar-injector
+  namespace: dapr-system
+  labels:
+    app: dapr-sidecar-injector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dapr-sidecar-injector
+  template:
+    metadata:
+      labels:
+        app: dapr-sidecar-injector
+    spec:
+      serviceAccountName: dapr-sidecar-injector
+      containers:
+      - name: sidecar-injector
+        image: "daprio/daprd:1.10.0"
+        ports:
+        - containerPort: 4000
+        args:
+        - "./daprd"
+        - "--mode=kubernetes"
+        - "--dapr-http-max-request-size=4"
+        - "--dapr-internal-grpc-port=50002"
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        resources:
+          limits:
+            cpu: "200m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dapr-sidecar-injector
+  namespace: dapr-system
+  labels:
+    app: dapr-sidecar-injector
+spec:
+  selector:
+    app: dapr-sidecar-injector
+  ports:
+    - protocol: TCP
+      port: 4000
+      targetPort: 4000
+  type: ClusterIP

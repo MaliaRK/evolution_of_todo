@@ -1,0 +1,472 @@
+# GKE Deployment Configuration
+# Configuration for deploying the Todo AI system to Google Kubernetes Engine
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gke-cluster-config
+  namespace: todo-app
+type: Opaque
+data:
+  # Google Cloud credentials for GKE
+  gcp-service-account-key: <base64-encoded-service-account-key>
+  gcp-project-id: <base64-encoded-project-id>
+  gcp-region: <base64-encoded-region>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-infrastructure-config
+  namespace: todo-app
+data:
+  # GKE cluster configuration
+  cluster-config.json: |
+    {
+      "name": "todo-app-gke-cluster",
+      "description": "GKE cluster for Todo AI system",
+      "initialNodeCount": 3,
+      "nodeConfig": {
+        "machineType": "e2-standard-4",
+        "diskSizeGb": 100,
+        "diskType": "pd-standard",
+        "oauthScopes": [
+          "https://www.googleapis.com/auth/cloud-platform"
+        ],
+        "serviceAccount": "todo-app-gke-node-sa@todo-app-project.iam.gserviceaccount.com",
+        "metadata": {
+          "disable-legacy-endpoints": "true"
+        },
+        "imageType": "cos_containerd",
+        "labels": {
+          "env": "production"
+        },
+        "tags": [
+          "todo-app-node"
+        ],
+        "shieldedInstanceConfig": {
+          "enableSecureBoot": true,
+          "enableIntegrityMonitoring": true
+        }
+      },
+      "masterAuth": {
+        "clientCertificateConfig": {
+          "issueClientCertificate": false
+        }
+      },
+      "loggingService": "logging.googleapis.com/kubernetes",
+      "monitoringService": "monitoring.googleapis.com/kubernetes",
+      "network": "projects/todo-app-project/global/networks/default",
+      "subnetwork": "projects/todo-app-project/regions/us-central1/subnetworks/default",
+      "locations": [
+        "us-central1-a",
+        "us-central1-b",
+        "us-central1-c"
+      ],
+      "enableAutoscaling": true,
+      "autoscaling": {
+        "enableNodeAutoprovisioning": true,
+        "autoprovisioningNodePoolDefaults": {
+          "oauthScopes": [
+            "https://www.googleapis.com/auth/cloud-platform"
+          ],
+          "serviceAccount": "todo-app-gke-node-sa@todo-app-project.iam.gserviceaccount.com"
+        },
+        "resourceLimits": [
+          {
+            "resourceType": "cpu",
+            "maximum": 100
+          },
+          {
+            "resourceType": "memory",
+            "maximum": 400
+          }
+        ]
+      },
+      "addonsConfig": {
+        "httpLoadBalancing": {
+          "disabled": false
+        },
+        "horizontalPodAutoscaling": {
+          "disabled": false
+        },
+        "kubernetesDashboard": {
+          "disabled": true
+        },
+        "networkPolicyConfig": {
+          "disabled": false
+        },
+        "istioConfig": {
+          "disabled": false,
+          "auth": "AUTH_NONE"
+        },
+        "cloudRunConfig": {
+          "disabled": true
+        },
+        "dnsCacheConfig": {
+          "enabled": true
+        },
+        "gcePersistentDiskCsiDriverConfig": {
+          "enabled": true
+        },
+        "gcpFilestoreCsiDriverConfig": {
+          "enabled": true
+        }
+      },
+      "subnetwork": "projects/todo-app-project/regions/us-central1/subnetworks/default",
+      "privateClusterConfig": {
+        "enablePrivateNodes": true,
+        "enablePrivateEndpoint": false,
+        "masterIpv4CidrBlock": "172.16.0.0/28"
+      },
+      "databaseEncryption": {
+        "state": "ENCRYPTED",
+        "keyName": "projects/todo-app-project/locations/us-central1/keyRings/todo-app-keyring/cryptoKeys/todo-app-key"
+      },
+      "shieldedNodes": {
+        "enabled": true
+      },
+      "workloadIdentityConfig": {
+        "workloadPool": "todo-app-project.svc.id.goog"
+      },
+      "enableTpu": false,
+      "tpuIpv4CidrBlock": "",
+      "datapathProvider": "ADVANCED_DATAPATH",
+      "authenticatorGroupsConfig": {},
+      "privateClusterConfig": {
+        "enablePrivateNodes": true,
+        "enablePrivateEndpoint": false,
+        "masterIpv4CidrBlock": "172.16.0.0/28",
+        "masterGlobalAccessConfig": {
+          "enabled": true
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-storage-config
+  namespace: todo-app
+data:
+  # Google Cloud storage configuration for GKE
+  gce-storage-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: fast-ssd
+    provisioner: kubernetes.io/gce-pd
+    parameters:
+      type: pd-ssd
+      replication-type: none
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+  gce-regional-storage-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: regional-fast-ssd
+    provisioner: kubernetes.io/gce-pd
+    parameters:
+      type: pd-ssd
+      replication-type: regional-pd
+    allowedTopologies:
+    - matchLabelExpressions:
+      - key: failure-domain.beta.kubernetes.io/region
+        values:
+        - us-central1
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-monitoring-config
+  namespace: todo-app
+data:
+  # GKE monitoring configuration
+  google-cloud-monitoring.yaml: |
+    # Google Cloud Operations Suite (formerly Stackdriver) configuration
+    clusterName: todo-app-gke-cluster
+    projectId: todo-app-project
+    location: us-central1
+    
+    monitoring:
+      enabled: true
+      component: "monitoring"
+      config:
+        enableComponents:
+        - "SYSTEM_COMPONENTS"
+        - "APISERVER"
+        - "CONTROLLER_MANAGER"
+        - "SCHEDULER"
+        - "WORKLOADS"
+        
+    logging:
+      enabled: true
+      component: "logging"
+      config:
+        enableComponents:
+        - "SYSTEM_COMPONENTS"
+        - "WORKLOADS"
+        
+    # Managed Service for Prometheus configuration
+    managedServicePrometheus:
+      enabled: true
+      config:
+        workloadMetrics: true
+        clusterMetrics: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-ingress-config
+  namespace: todo-app
+data:
+  # GKE ingress configuration
+  gke-ingress-config.yaml: |
+    # Google Cloud Load Balancer configuration for GKE
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-ingress
+      annotations:
+        # Google Cloud Load Balancer annotations
+        kubernetes.io/ingress.class: "gce"
+        kubernetes.io/ingress.global-static-ip-name: "todo-app-ip"
+        networking.gke.io/managed-certificates: "todo-app-managed-cert"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      defaultBackend:
+        service:
+          name: todo-app-service
+          port:
+            number: 80
+      tls:
+      - secretName: todo-app-tls
+        hosts:
+        - todo-app.gke.example.com
+      rules:
+      - host: todo-app.gke.example.com
+        http:
+          paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-security-config
+  namespace: todo-app
+data:
+  # GKE security configuration
+  google-cloud-security-config.yaml: |
+    # Google Cloud Security Command Center integration
+    projectName: todo-app-project
+    clusterName: todo-app-gke-cluster
+    location: us-central1
+    
+    security:
+      enabled: true
+      config:
+        securityPosture: "MODE_UNSPECIFIED"
+        workloadVulnerabilityShooting: "DISABLED"
+        
+    # Binary Authorization configuration
+    binaryAuthorization:
+      enabled: true
+      evaluationMode: "PROJECT_SINGLETON_POLICY_ENFORCE"
+      
+    # Cloud Armor configuration
+    cloudArmor:
+      enabled: true
+      policies:
+      - name: "todo-app-cloud-armor-policy"
+        description: "Security policy for Todo App"
+        rules:
+        - priority: "1000"
+          description: "allow from office IP"
+          match:
+            versionedExpr: "SRC_IPS_V1"
+            config:
+              srcIpRanges: ["192.168.1.0/24"]
+          action: "allow"
+        - priority: "2147483647"
+          description: "default rule"
+          match:
+            versionedExpr: "SRC_IPS_V1"
+            config:
+              srcIpRanges: ["*"]
+          action: "deny(403)"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-network-config
+  namespace: todo-app
+data:
+  # GKE network configuration
+  gke-network-config.yaml: |
+    # Google Cloud VPC and network policies
+    apiVersion: networking.gke.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: gke-network-policy
+    spec:
+      # Enable GKE network policy
+      enabled: true
+      # Configure VPC-native clusters
+      vpcNative: true
+      # Configure private clusters
+      privateCluster: true
+      # Configure master authorized networks
+      masterAuthorizedNetworks:
+        enabled: true
+        cidrBlocks:
+        - displayName: "office"
+          cidr: "192.168.1.0/24"
+        - displayName: "corp"
+          cidr: "10.0.0.0/8"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gke-helm-values
+  namespace: todo-app
+data:
+  # GKE-specific Helm values
+  gke-values.yaml: |
+    # GKE-specific configurations
+    replicaCount: 3
+    
+    image:
+      repository: todo-app
+      pullPolicy: Always
+      tag: "latest"
+    
+    imagePullSecrets: []
+    nameOverride: ""
+    fullnameOverride: "todo-app-gke"
+    
+    serviceAccount:
+      create: true
+      annotations:
+        iam.gke.io/gcp-service-account: todo-app-gke-sa@todo-app-project.iam.gserviceaccount.com
+      name: todo-app-gke-sa
+    
+    podAnnotations: {}
+    
+    podSecurityContext:
+      fsGroup: 2000
+    
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+    
+    service:
+      type: LoadBalancer
+      port: 80
+    
+    ingress:
+      enabled: true
+      className: "gce"
+      annotations:
+        kubernetes.io/ingress.class: "gce"
+        kubernetes.io/ingress.global-static-ip-name: "todo-app-gke-ip"
+        networking.gke.io/managed-certificates: "todo-app-gke-cert"
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      hosts:
+        - host: todo-app.gke.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: todo-app-tls
+          hosts:
+            - todo-app.gke.example.com
+    
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
+    
+    nodeSelector: {}
+    
+    tolerations: []
+    
+    affinity: {}
+    
+    # GKE-specific configurations
+    gke:
+      enabled: true
+      workloadIdentity:
+        enabled: true
+        gcpServiceAccount: todo-app-gke-sa@todo-app-project.iam.gserviceaccount.com
+      cloudSQL:
+        enabled: true
+        instanceConnectionName: todo-app-project:us-central1:todo-app-db
+      secretManager:
+        enabled: true
+        projectId: todo-app-project
+      containerRegistry:
+        enabled: true
+        region: us-central1
+        name: todo-app-project
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: todo-app-gke-sa
+  namespace: todo-app
+  annotations:
+    iam.gke.io/gcp-service-account: todo-app-gke-sa@todo-app-project.iam.gserviceaccount.com
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: todo-app-gke-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: todo-app-gke-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: todo-app-gke-sa
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: todo-app-gke-role
+  apiGroup: rbac.authorization.k8s.io

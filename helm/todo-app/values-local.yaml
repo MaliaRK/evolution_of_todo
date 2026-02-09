@@ -1,0 +1,63 @@
+# Environment-specific values for local Minikube deployment
+# Extends base values.yaml with local development settings
+
+replicaCount: 1
+
+image:
+  repository: todo-app
+  pullPolicy: Never  # For local development
+  tag: "latest"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  hosts:
+    - host: todo-app.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+autoscaling:
+  enabled: false
+
+# Local-specific Kafka settings
+kafka:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    enabled: false  # Use ephemeral storage for local
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Local-specific Dapr settings
+dapr:
+  enabled: true
+  globalConfig: default
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Local-specific configurations
+local:
+  debug: true
+  logLevel: "debug"

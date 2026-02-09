@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dapr-placement
+  namespace: dapr-system
+  labels:
+    app: dapr-placement
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dapr-placement
+  template:
+    metadata:
+      labels:
+        app: dapr-placement
+    spec:
+      containers:
+      - name: dapr-placement
+        image: "daprio/dapr:1.10.0"
+        command: ["./placement"]
+        args: ["-port", "50005"]
+        ports:
+        - containerPort: 50005
+        resources:
+          limits:
+            cpu: "1.0"
+            memory: "256Mi"
+          requests:
+            cpu: "0.1"
+            memory: "64Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dapr-placement
+  namespace: dapr-system
+  labels:
+    app: dapr-placement
+spec:
+  selector:
+    app: dapr-placement
+  ports:
+    - protocol: TCP
+      port: 50005
+      targetPort: 50005
+  type: ClusterIP

@@ -1,0 +1,77 @@
+# Environment-specific values for staging deployment
+# Extends base values.yaml with staging settings
+
+replicaCount: 2
+
+image:
+  repository: todo-app-staging
+  pullPolicy: Always
+  tag: "staging-latest"
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: staging.todo-app.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: staging-tls-cert
+      hosts:
+        - staging.todo-app.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+# Staging-specific Kafka settings
+kafka:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+# Staging-specific Dapr settings
+dapr:
+  enabled: true
+  globalConfig: staging-config
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Staging-specific configurations
+staging:
+  debug: false
+  logLevel: "info"
+  enableMonitoring: true

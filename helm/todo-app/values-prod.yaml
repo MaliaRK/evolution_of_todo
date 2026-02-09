@@ -1,0 +1,94 @@
+# Environment-specific values for production deployment
+# Extends base values.yaml with production settings
+
+replicaCount: 3
+
+image:
+  repository: todo-app-prod
+  pullPolicy: Always
+  tag: "prod-latest"
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    - host: todo-app.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: prod-tls-cert
+      hosts:
+        - todo-app.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+# Production-specific Kafka settings
+kafka:
+  enabled: true
+  replicaCount: 3
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: "fast-ssd"
+  resources:
+    limits:
+      cpu: "2"
+      memory: 4Gi
+    requests:
+      cpu: "1"
+      memory: 2Gi
+  configuration: |
+    auto.create.topics.enable=true
+    default.replication.factor=3
+    min.insync.replicas=2
+    replica.fetch.max.bytes=1048576
+    socket.send.buffer.bytes=102400
+    socket.receive.buffer.bytes=102400
+
+# Production-specific Dapr settings
+dapr:
+  enabled: true
+  globalConfig: prod-config
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+# Production-specific configurations
+production:
+  debug: false
+  logLevel: "warn"
+  enableMonitoring: true
+  enableTracing: true
+  enableProfiling: true
+  
+# Security settings for production
+security:
+  enableRBAC: true
+  enableNetworkPolicies: true
+  enablePodSecurityPolicies: true

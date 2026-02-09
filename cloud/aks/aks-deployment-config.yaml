@@ -1,0 +1,396 @@
+# AKS Deployment Configuration
+# Configuration for deploying the Todo AI system to Azure Kubernetes Service
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aks-cluster-config
+  namespace: todo-app
+type: Opaque
+data:
+  # Azure credentials for AKS
+  azure-tenant-id: <base64-encoded-tenant-id>
+  azure-client-id: <base64-encoded-client-id>
+  azure-client-secret: <base64-encoded-client-secret>
+  subscription-id: <base64-encoded-subscription-id>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-infrastructure-config
+  namespace: todo-app
+data:
+  # AKS cluster configuration
+  cluster-config.json: |
+    {
+      "location": "East US",
+      "resourceGroupName": "todo-app-rg",
+      "clusterName": "todo-app-aks-cluster",
+      "kubernetesVersion": "1.25.5",
+      "nodeResourceGroup": "MC_todo-app-rg_todo-app-aks-cluster_eastus",
+      "dnsPrefix": "todo-app-aks",
+      "fqdn": "todo-app-aks-cluster.eastus.cloudapp.azure.com",
+      "privateFqdn": null,
+      "agentPoolProfiles": [
+        {
+          "name": "nodepool1",
+          "count": 3,
+          "vmSize": "Standard_D4s_v3",
+          "osDiskSizeGb": 128,
+          "type": "VirtualMachineScaleSets",
+          "mode": "System",
+          "orchestratorVersion": "1.25.5",
+          "enableAutoScaling": true,
+          "minCount": 1,
+          "maxCount": 5,
+          "scaleSetEvictionPolicy": "Delete",
+          "spotMaxPrice": -1
+        }
+      ],
+      "linuxProfile": {
+        "adminUsername": "azureuser"
+      },
+      "servicePrincipalProfile": {
+        "clientId": "msi"
+      },
+      "addonProfiles": {
+        "omsagent": {
+          "enabled": true,
+          "config": {
+            "logAnalyticsWorkspaceResourceID": "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/Microsoft.OperationalInsights/workspaces/todo-app-workspace"
+          }
+        },
+        "aciConnectorLinux": {
+          "enabled": false
+        },
+        "azurepolicy": {
+          "enabled": true
+        },
+        "httpApplicationRouting": {
+          "enabled": false
+        },
+        "ingressApplicationGateway": {
+          "enabled": false
+        },
+        "kubeDashboard": {
+          "enabled": false
+        }
+      },
+      "nodeResourceGroup": "MC_todo-app-rg_todo-app-aks-cluster_eastus",
+      "enableRBAC": true,
+      "enablePodSecurityPolicy": false,
+      "networkProfile": {
+        "networkPlugin": "azure",
+        "networkPolicy": "azure",
+        "podCidr": "10.244.0.0/16",
+        "serviceCidr": "10.0.0.0/16",
+        "dnsServiceIP": "10.0.0.10",
+        "dockerBridgeCidr": "172.17.0.1/16",
+        "loadBalancerSku": "standard"
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-storage-config
+  namespace: todo-app
+data:
+  # Azure storage configuration for AKS
+  azure-storage-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: azurefile-premium
+    provisioner: file.csi.azure.com
+    parameters:
+      skuName: Premium_LRS
+      location: East US
+      resourceGroup: todo-app-rg
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+  azure-disk-class.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: managed-premium
+    provisioner: disk.csi.azure.com
+    parameters:
+      skuName: Premium_LRS
+      cachingMode: ReadOnly
+      location: East US
+      resourceGroup: todo-app-rg
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-monitoring-config
+  namespace: todo-app
+data:
+  # AKS monitoring configuration
+  azure-monitor-config.yaml: |
+    clusterResourceId: /subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/Microsoft.ContainerService/managedClusters/todo-app-aks-cluster
+    config:
+      settings:
+        /* Specify if ingestion of agent performance data needs to be disabled */
+        enableIngestion: true
+        /* Specify if container logs need to be collected */
+        logs:
+          /* Specify if container logs need to be collected */
+          containerlogs:
+            /* Specify if container logs need to be collected */
+            enabled: true
+            /* Specify the max GB's of space to use for container logs */
+            retentionInDays: 30
+          /* Specify if kubenretes events need to be collected */
+          kubernetesEvents:
+            enabled: true
+          /* Specify if kubenretes audit logs need to be collected */
+          kubernetesAuditLogs:
+            enabled: true
+          /* Specify if control plane logs need to be collected */
+          controlPlaneLogs:
+            enabled: true
+        /* Specify if metrics need to be collected */
+        metrics:
+          /* Specify if metrics need to be collected */
+          enabled: true
+          /* Specify the interval in seconds for metrics collection */
+          retentionInDays: 30
+          /* Specify the interval in seconds for metrics collection */
+          granularity: PT1M
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-ingress-config
+  namespace: todo-app
+data:
+  # AKS ingress configuration
+  application-gateway-config.yaml: |
+    # Application Gateway configuration for AKS
+    apiVersion: appgw.ingress.k8s.io/v1
+    kind: AzureIngressManagedApplicationGateway
+    metadata:
+      name: todo-app-application-gateway
+    spec:
+      gatewayName: todo-app-agw
+      resourceGroup: todo-app-rg
+      location: East US
+      sku:
+        name: WAF_v2
+        tier: WAF_v2
+      firewallPolicy:
+        name: todo-app-waf-policy
+        location: East US
+        enabled: true
+        mode: Prevention
+        ruleSets:
+        - type: Microsoft_BotManagerRuleSet
+          version: "0.1"
+        - type: Microsoft_OWASP3.1_20210906
+          version: "1.0"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-security-config
+  namespace: todo-app
+data:
+  # AKS security configuration
+  azure-security-config.yaml: |
+    # Azure Security Center integration
+    apiVersion: securitycenter.azure.com/v1
+    kind: SecurityCenter
+    metadata:
+      name: todo-app-security-center
+    spec:
+      logAnalyticsWorkspaceId: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/Microsoft.OperationalInsights/workspaces/todo-app-workspace"
+      autoProvision: true
+      logAnalyticSolutionName: "Security"
+      securityContactEmails:
+        - security@todo-app.com
+      securityContactPhone: "+1-555-555-5555"
+      securityContactRole: "Owner"
+      securityContactAlertNotifications: true
+      securityContactNotificationsAdmins: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-network-config
+  namespace: todo-app
+data:
+  # AKS network configuration
+  network-config.yaml: |
+    # Azure CNI network configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-cni-networkconfig
+      namespace: kube-system
+    data:
+      networkconfig.json: |
+        {
+          "cniVersion": "0.3.0",
+          "name": "azure",
+          "type": "azure-vnet",
+          "mode": "bridge",
+          "bridge": "azure0",
+          "logLevel": "verbose",
+          "ipam": {
+            "type": "azure-vnet-ipam",
+            "subnet": "todo-app-subnet",
+            "environment": "AzurePublicCloud"
+          },
+          "dns": {},
+          "additionalArgs": [
+            {
+              "name": "EndpointPolicy",
+              "value": [
+                {
+                  "type": "OutBoundNAT",
+                  "args": {
+                    "destinations": ["1.1.1.1/32"],
+                    "exceptionList": ["1.0.0.1/32"]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aks-helm-values
+  namespace: todo-app
+data:
+  # AKS-specific Helm values
+  aks-values.yaml: |
+    # AKS-specific configurations
+    replicaCount: 3
+    
+    image:
+      repository: todo-app
+      pullPolicy: Always
+      tag: "latest"
+    
+    imagePullSecrets: []
+    nameOverride: ""
+    fullnameOverride: "todo-app-aks"
+    
+    serviceAccount:
+      create: true
+      annotations:
+        azure.workload.identity/client-id: <azure-workload-identity-client-id>
+      name: todo-app-aks-sa
+    
+    podAnnotations: {}
+    
+    podSecurityContext:
+      fsGroup: 2000
+    
+    securityContext:
+      capabilities:
+        drop:
+        - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+    
+    service:
+      type: LoadBalancer
+      port: 80
+    
+    ingress:
+      enabled: true
+      className: "webapprouting.kubernetes.azure.com"
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/rate-limit: "100"
+      hosts:
+        - host: todo-app.westeurope.cloudapp.azure.com
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - secretName: todo-app-tls
+          hosts:
+            - todo-app.westeurope.cloudapp.azure.com
+    
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 80
+      targetMemoryUtilizationPercentage: 80
+    
+    nodeSelector: {}
+    
+    tolerations: []
+    
+    affinity: {}
+    
+    # AKS-specific configurations
+    azure:
+      enabled: true
+      workloadIdentity:
+        enabled: true
+        clientId: <azure-workload-identity-client-id>
+      keyVault:
+        enabled: true
+        name: todo-app-kv
+        tenantId: <azure-tenant-id>
+      containerRegistry:
+        enabled: true
+        name: todoappregistry
+        server: todoappregistry.azurecr.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: todo-app-aks-sa
+  namespace: todo-app
+  annotations:
+    azure.workload.identity/client-id: <azure-workload-identity-client-id>
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: todo-app-aks-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: todo-app-aks-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: todo-app-aks-sa
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: todo-app-aks-role
+  apiGroup: rbac.authorization.k8s.io

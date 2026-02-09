@@ -54,6 +54,22 @@ venv.bak/
 instance/
 .webassets-cache
 
+# Kafka
+logs/
+kafka-logs/
+*.log
+.kafka/
+kafka_*
+zookeeper.out
+kafka.out
+
+# Dapr
+.dapr/
+daprd
+placement-service
+sentinel
+*.dapr
+
 # Node.js
 node_modules/
 npm-debug.log

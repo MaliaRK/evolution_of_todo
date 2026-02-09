@@ -141,6 +141,80 @@ cd frontend
 npm run dev
 ```
 
+## Deployment
+
+The Todo AI System can be deployed to various cloud platforms. Here are the options:
+
+### Railway (Recommended)
+
+Railway provides an excellent platform for deploying both frontend and backend services:
+
+1. **Backend Deployment**:
+   - Create a new service in Railway
+   - Connect your GitHub repository
+   - Set the root directory to `./backend`
+   - Add environment variables:
+     - `DATABASE_URL`: PostgreSQL database connection string
+     - `OPENAI_API_KEY`: OpenAI API key
+     - `COHERE_API_KEY`: Cohere API key
+     - `BETTER_AUTH_SECRET`: Better Auth secret
+     - `BETTER_AUTH_URL`: Better Auth URL (your backend URL)
+
+2. **Frontend Deployment**:
+   - Create another service in Railway
+   - Connect your GitHub repository
+   - Set the root directory to `./frontend`
+   - Add environment variable:
+     - `NEXT_PUBLIC_API_BASE_URL`: Your backend URL
+
+### Heroku
+
+1. Create Heroku apps for both frontend and backend
+2. Set appropriate buildpacks (Python for backend, Node.js for frontend)
+3. Configure environment variables as mentioned above
+4. Deploy using Git integration
+
+### Render
+
+1. Create Web Services for both frontend and backend
+2. Configure build commands and environment variables
+3. Set up automatic deployments from GitHub
+
+### Docker
+
+Build and run using Docker:
+
+```bash
+# Build images
+cd backend && docker build -t todo-backend . && cd ..
+cd frontend && docker build -t todo-frontend . && cd ..
+
+# Run with docker-compose
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+## Environment Variables
+
+Required environment variables for deployment:
+
+**Backend:**
+- `DATABASE_URL`: PostgreSQL database connection string
+- `OPENAI_API_KEY`: OpenAI API key
+- `COHERE_API_KEY`: Cohere API key
+- `BETTER_AUTH_SECRET`: Better Auth secret
+- `BETTER_AUTH_URL`: Better Auth URL
+
+**Frontend:**
+- `NEXT_PUBLIC_API_BASE_URL`: Backend API URL
+
+## Health Checks
+
+After deployment, verify your services are running:
+
+- Backend health: `GET /health`
+- Backend detailed health: `GET /health/detailed`
+- Backend metrics: `GET /metrics`
+
 ## License
 
 This project is licensed under the MIT License.

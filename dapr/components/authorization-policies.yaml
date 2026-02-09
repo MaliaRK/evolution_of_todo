@@ -1,0 +1,318 @@
+# Dapr Authorization Policies Configuration
+# Configuration for Dapr authorization policies for component access
+
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-config
+  namespace: dapr-system
+spec:
+  accessControl:
+    defaultAction: allow
+    trustDomain: "todo-app"
+    policies:
+    - appId: todo-app
+      defaultAction: allow
+      trustDomain: "todo-app"
+      namespace: "todo-app"
+      rules:
+      - name: allow-state-access
+        action: allow
+        operations:
+        - name: "state"
+          type: "state"
+        httpVerb: ["*"]
+        localAppAction: allow
+      - name: allow-pubsub-access
+        action: allow
+        operations:
+        - name: "pubsub"
+          type: "pubsub"
+        httpVerb: ["*"]
+        localAppAction: allow
+      - name: allow-secret-access
+        action: allow
+        operations:
+        - name: "secrets"
+          type: "secrets"
+        httpVerb: ["GET"]
+        localAppAction: allow
+      - name: allow-invoke-access
+        action: allow
+        operations:
+        - name: "invoke"
+          type: "service"
+        httpVerb: ["*"]
+        localAppAction: allow
+    - appId: dapr-sidecar
+      defaultAction: allow
+      trustDomain: "dapr-system"
+      namespace: "dapr-system"
+      rules:
+      - name: allow-dapr-operations
+        action: allow
+        operations:
+        - name: "*"
+          type: "*"
+        httpVerb: ["*"]
+        localAppAction: allow
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: allowed-statestore
+  namespace: todo-app
+spec:
+  type: state.redis
+  version: v1
+  metadata:
+  - name: redisHost
+    value: "redis-master:6379"
+  - name: redisPassword
+    secretKeyRef:
+      name: redis-password
+      key: redis-password
+  - name: actorStateStore
+    value: "true"
+  - name: concurrency
+    value: parallel
+  - name: timeout
+    value: 5s
+  - name: maxRetries
+    value: 3
+  - name: maxRetryBackoff
+    value: 4s
+scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: allowed-pubsub
+  namespace: todo-app
+spec:
+  type: pubsub.kafka
+  version: v1
+  metadata:
+  - name: brokers
+    value: "kafka:9092"
+  - name: consumerGroup
+    value: "todo-app"
+  - name: clientID
+    value: "todo-app"
+  - name: authRequired
+    value: "false"
+scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: allowed-secrets
+  namespace: todo-app
+spec:
+  type: secretstores.kubernetes
+  version: v1
+  metadata: []
+scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: todo-app-dapr-config
+  namespace: todo-app
+spec:
+  tracing:
+    samplingRate: "1"
+    zipkin:
+      endpointAddress: "http://jaeger:9411/api/v2/spans"
+  metric:
+    enabled: true
+    enableServiceInvocationReporting: true
+  mtls:
+    enabled: true
+    workloadCertTTL: "24h"
+    allowedClockSkew: "15m"
+  secrets:
+    scopes:
+    - storeName: allowed-secrets
+      defaultAccess: allow
+      allowedSecrets: ["todo-app-db-secret", "todo-app-api-keys", "todo-app-jwt-config"]
+      deniedSecrets: ["etcd-ca", "apiserver-etcd-client-key"]
+---
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: task-created-subscription
+  namespace: todo-app
+spec:
+  topic: task-created
+  route: /tasks/created
+  pubsubname: allowed-pubsub
+  match:
+    - source: "todo-app"
+      operation: "create"
+  scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Subscription
+metadata:
+  name: task-completed-subscription
+  namespace: todo-app
+spec:
+  topic: task-completed
+  route: /tasks/completed
+  pubsubname: allowed-pubsub
+  match:
+    - source: "todo-app"
+      operation: "complete"
+  scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-api-allowlist
+  namespace: dapr-system
+spec:
+  httpPipeline:
+    handlers:
+    - name: api-allowlist
+      type: middleware.http.httpAllowlist
+  apiAccessControl:
+    allowed:
+    - appId: todo-app
+      methods:
+      - "state/*"
+      - "secrets/*"
+      - "publish/*"
+      - "invoke/*"
+      - "actors/*"
+      trustDomain: "todo-app"
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: rate-limiting-middleware
+  namespace: todo-app
+spec:
+  type: middleware.http.ratelimit
+  version: v1
+  metadata:
+  - name: maxRequestsPerSecond
+    value: "100"
+  - name: burst
+    value: "200"
+scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: todo-app-http-pipeline
+  namespace: todo-app
+spec:
+  httpPipeline:
+    handlers:
+    - name: rate-limiting-middleware
+      type: middleware.http.ratelimit
+  accessControl:
+    defaultAction: allow
+    trustDomain: "todo-app"
+    policies:
+    - appId: todo-app
+      defaultAction: allow
+      trustDomain: "todo-app"
+      namespace: "todo-app"
+      rules:
+      - name: rate-limit-api
+        action: allow
+        operations:
+        - name: "v1.0/invoke/*"
+          type: "service"
+        httpVerb: ["POST", "GET", "PUT", "DELETE"]
+        localAppAction: allow
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: authentication-middleware
+  namespace: todo-app
+spec:
+  type: middleware.http.oauth2
+  version: v1
+  metadata:
+  - name: clientId
+    value: "todo-app"
+  - name: clientSecret
+    secretKeyRef:
+      name: oauth-client-secret
+      key: client-secret
+  - name: scopes
+    value: "api:invoke"
+  - name: authURL
+    value: "https://auth.todo-app.com/oauth/authorize"
+  - name: tokenURL
+    value: "https://auth.todo-app.com/oauth/token"
+  - name: redirectURL
+    value: "https://todo-app.todo-app.svc.cluster.local/callback"
+scopes:
+  - todo-app
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: todo-app-auth-pipeline
+  namespace: todo-app
+spec:
+  httpPipeline:
+    handlers:
+    - name: authentication-middleware
+      type: middleware.http.oauth2
+  accessControl:
+    defaultAction: allow
+    trustDomain: "todo-app"
+    policies:
+    - appId: todo-app
+      defaultAction: allow
+      trustDomain: "todo-app"
+      namespace: "todo-app"
+      rules:
+      - name: authenticated-access
+        action: allow
+        operations:
+        - name: "v1.0/invoke/*"
+          type: "service"
+        httpVerb: ["*"]
+        localAppAction: allow
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: authorization-policy
+  namespace: todo-app
+spec:
+  type: middleware.http.oidc
+  version: v1
+  metadata:
+  - name: clientId
+    value: "todo-app"
+  - name: clientSecret
+    secretKeyRef:
+      name: oauth-client-secret
+      key: client-secret
+  - name: issuerURL
+    value: "https://auth.todo-app.com/"
+  - name: scopes
+    value: "openid profile email"
+  - name: redirectURL
+    value: "https://todo-app.todo-app.svc.cluster.local/callback"
+  - name: logoutEnabled
+    value: "true"
+  - name: logoutURL
+    value: "https://auth.todo-app.com/logout"
+scopes:
+  - todo-app

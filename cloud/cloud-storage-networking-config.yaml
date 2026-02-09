@@ -1,0 +1,499 @@
+# Cloud-Specific Storage Classes and Networking Configuration
+# Configuration for cloud-specific storage and networking in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-storage-classes
+  namespace: todo-app
+data:
+  # Multi-cloud storage class definitions
+  azure-storage-classes.yaml: |
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: azure-fast-ssd
+    provisioner: disk.csi.azure.com
+    parameters:
+      skuName: Premium_LRS
+      cachingMode: ReadOnly
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: azure-standard-hdd
+    provisioner: disk.csi.azure.com
+    parameters:
+      skuName: Standard_LRS
+      cachingMode: ReadOnly
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: azure-files-premium
+    provisioner: file.csi.azure.com
+    parameters:
+      skuName: Premium_LRS
+    reclaimPolicy: Delete
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+  gcp-storage-classes.yaml: |
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: gcp-fast-ssd
+    provisioner: kubernetes.io/gce-pd
+    parameters:
+      type: pd-ssd
+      replication-type: none
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: gcp-standard
+    provisioner: kubernetes.io/gce-pd
+    parameters:
+      type: pd-standard
+      replication-type: none
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: gcp-regional-ssd
+    provisioner: kubernetes.io/gce-pd
+    parameters:
+      type: pd-ssd
+      replication-type: regional-pd
+    allowedTopologies:
+    - matchLabelExpressions:
+      - key: failure-domain.beta.kubernetes.io/region
+        values:
+        - us-central1
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+  oci-storage-classes.yaml: |
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: oci-fast-ssd
+    provisioner: oracle.com/oci
+    parameters:
+      csi.storage.k8s.io/fstype: ext4
+      availabilityDomain: PHX-AD-1
+      compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    ---
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: oci-file-storage
+    provisioner: filestore.csi.oraclecloud.com
+    parameters:
+      packageQuotaGb: "1024"
+      mountTargetId: ocid1.mounttarget.oc1.phx.aaaaaaa...
+      compartmentId: ocid1.compartment.oc1..aaaaaaa...
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-networking-config
+  namespace: todo-app
+data:
+  # Multi-cloud networking configurations
+  azure-networking.yaml: |
+    # Azure networking configurations
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-network-config
+      namespace: kube-system
+    data:
+      azure.conf: |
+        {
+          "cloud": "AzurePublicCloud",
+          "tenantId": "<azure-tenant-id>",
+          "subscriptionId": "<azure-subscription-id>",
+          "resourceGroup": "todo-app-rg",
+          "location": "East US",
+          "vnetName": "todo-app-vnet",
+          "vnetResourceGroup": "todo-app-rg",
+          "subnetName": "todo-app-subnet",
+          "securityGroupName": "todo-app-nsg",
+          "primaryAvailabilitySetName": "todo-app-as",
+          "aadClientId": "<azure-client-id>",
+          "aadClientSecret": "<azure-client-secret>",
+          "useManagedIdentityExtension": true,
+          "userAssignedIdentityID": "<user-assigned-identity-id>",
+          "cloudProviderBackoff": true,
+          "cloudProviderBackoffRetries": 6,
+          "cloudProviderBackoffDuration": 5,
+          "cloudProviderRateLimit": true,
+          "cloudProviderRateLimitQPS": 10,
+          "cloudProviderRateLimitBucket": 100,
+          "useInstanceMetadata": true,
+          "loadBalancerSku": "standard",
+          "excludeMasterFromStandardLB": true,
+          "providerVaultName": "todo-app-kv",
+          "maximumLoadBalancerRuleCount": 250
+        }
+    ---
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-cni-config
+      namespace: kube-system
+    data:
+      networkconfig.json: |
+        {
+          "cniVersion": "0.3.0",
+          "name": "azure",
+          "type": "azure-vnet",
+          "mode": "bridge",
+          "bridge": "azure0",
+          "logLevel": "verbose",
+          "ipam": {
+            "type": "azure-vnet-ipam",
+            "subnet": "todo-app-subnet",
+            "environment": "AzurePublicCloud"
+          },
+          "dns": {},
+          "additionalArgs": [
+            {
+              "name": "EndpointPolicy",
+              "value": [
+                {
+                  "type": "OutBoundNAT",
+                  "args": {
+                    "destinations": ["1.1.1.1/32"],
+                    "exceptionList": ["1.0.0.1/32"]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+  gcp-networking.yaml: |
+    # Google Cloud networking configurations
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gcp-network-config
+      namespace: kube-system
+    data:
+      # GKE uses Google Cloud networking by default
+      # Configuration for VPC-native clusters
+      gke-config: |
+        {
+          "clusterSecondaryRangeName": "todo-app-pods",
+          "servicesSecondaryRangeName": "todo-app-services",
+          "nodeIpv4Cidr": "10.4.0.0/14",
+          "podIpv4Cidr": "10.0.0.0/14",
+          "serviceIpv4Cidr": "10.1.0.0/20"
+        }
+    ---
+    apiVersion: networking.gke.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: gke-network-policy
+      namespace: todo-app
+    spec:
+      enabled: true
+      vpcNative: true
+      privateCluster: true
+      masterAuthorizedNetworks:
+        enabled: true
+        cidrBlocks:
+        - displayName: "office"
+          cidr: "192.168.1.0/24"
+        - displayName: "corp"
+          cidr: "10.0.0.0/8"
+  oci-networking.yaml: |
+    # Oracle Cloud networking configurations
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-network-config
+      namespace: kube-system
+    data:
+      # OCI networking configuration
+      oci-config: |
+        {
+          "clusterId": "ocid1.cluster.oc1.phx.aaaaaaa...",
+          "compartmentId": "ocid1.compartment.oc1..aaaaaaa...",
+          "vcnId": "ocid1.vcn.oc1.phx.aaaaaaa...",
+          "subnetId": "ocid1.subnet.oc1.phx.aaaaaaa...",
+          "securityListId": "ocid1.securitylist.oc1.phx.aaaaaaa...",
+          "nodePoolSubnetIds": [
+            "ocid1.subnet.oc1.phx.aaaaaaa...",
+            "ocid1.subnet.oc1.phx.aaaaaaa..."
+          ],
+          "serviceLbSubnetIds": [
+            "ocid1.subnet.oc1.phx.aaaaaaa...",
+            "ocid1.subnet.oc1.phx.aaaaaaa..."
+          ],
+          "nodePublicIpEnabled": false,
+          "isUsingVerifiedProvider": false,
+          "loadBalancerSubnetIds": [
+            "ocid1.subnet.oc1.phx.aaaaaaa...",
+            "ocid1.subnet.oc1.phx.aaaaaaa..."
+          ],
+          "flexibleLoadBalancer": true
+        }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-load-balancer-config
+  namespace: todo-app
+data:
+  # Multi-cloud load balancer configurations
+  azure-load-balancer.yaml: |
+    # Azure Load Balancer configuration
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-azure-lb
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: todo-app-rg
+        service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+        service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout: "30"
+        service.beta.kubernetes.io/azure-dns-label-name: todo-app-aks
+        service.beta.kubernetes.io/azure-rtm: "true"
+        service.beta.kubernetes.io/azure-attributions: "todo-app"
+    spec:
+      type: LoadBalancer
+      loadBalancerClass: service.kubernetes.io/azure-load-balancer
+      ports:
+      - name: http
+        port: 80
+        targetPort: 8080
+        protocol: TCP
+      - name: https
+        port: 443
+        targetPort: 8443
+        protocol: TCP
+      selector:
+        app: todo-app
+  gcp-load-balancer.yaml: |
+    # Google Cloud Load Balancer configuration
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-gcp-lb
+      annotations:
+        cloud.google.com/load-balancer-type: "External"
+        networking.gke.io/load-balancer-type: "External"
+    spec:
+      type: LoadBalancer
+      loadBalancerClass: service.kubernetes.io/gcp-load-balancer
+      ports:
+      - name: http
+        port: 80
+        targetPort: 8080
+        protocol: TCP
+      - name: https
+        port: 443
+        targetPort: 8443
+        protocol: TCP
+      selector:
+        app: todo-app
+  oci-load-balancer.yaml: |
+    # Oracle Cloud Load Balancer configuration
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-oci-lb
+      annotations:
+        service.beta.kubernetes.io/oci-load-balancer-internal: "false"
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+        service.beta.kubernetes.io/oci-load-balancer-security-list-management-mode: "Oracle-managed"
+    spec:
+      type: LoadBalancer
+      loadBalancerClass: service.kubernetes.io/oci-load-balancer
+      ports:
+      - name: http
+        port: 80
+        targetPort: 8080
+        protocol: TCP
+      - name: https
+        port: 443
+        targetPort: 8443
+        protocol: TCP
+      selector:
+        app: todo-app
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-dns-config
+  namespace: todo-app
+data:
+  # Multi-cloud DNS configurations
+  azure-dns.yaml: |
+    # Azure DNS configuration
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-azure-ingress
+      annotations:
+        kubernetes.io/ingress.class: "nginx"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.azure.example.com"
+        external-dns.alpha.kubernetes.io/ttl: "60"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      rules:
+      - host: todo-app.azure.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+      tls:
+      - hosts:
+        - todo-app.azure.example.com
+        secretName: todo-app-tls
+  gcp-dns.yaml: |
+    # Google Cloud DNS configuration
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-gcp-ingress
+      annotations:
+        kubernetes.io/ingress.class: "gce"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.gcp.example.com"
+        external-dns.alpha.kubernetes.io/ttl: "300"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      rules:
+      - host: todo-app.gcp.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+      tls:
+      - hosts:
+        - todo-app.gcp.example.com
+        secretName: todo-app-tls
+  oci-dns.yaml: |
+    # Oracle Cloud DNS configuration
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-oci-ingress
+      annotations:
+        kubernetes.io/ingress.class: "oci"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.oci.example.com"
+        external-dns.alpha.kubernetes.io/ttl: "300"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      rules:
+      - host: todo-app.oci.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+      tls:
+      - hosts:
+        - todo-app.oci.example.com
+        secretName: todo-app-tls
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-provider-features
+  namespace: todo-app
+data:
+  # Cloud provider specific features
+  cloud-features.yaml: |
+    # Configuration for cloud provider specific features
+    azure:
+      enabled: true
+      features:
+        workloadIdentity:
+          enabled: true
+          clientId: <azure-workload-identity-client-id>
+        keyVault:
+          enabled: true
+          name: todo-app-kv
+        containerRegistry:
+          enabled: true
+          name: todoappregistry
+        monitor:
+          enabled: true
+          workspaceId: <log-analytics-workspace-id>
+    gcp:
+      enabled: true
+      features:
+        workloadIdentity:
+          enabled: true
+          gcpServiceAccount: todo-app-gke-sa@todo-app-project.iam.gserviceaccount.com
+        secretManager:
+          enabled: true
+          projectId: todo-app-project
+        cloudSQL:
+          enabled: true
+          instanceConnectionName: todo-app-project:us-central1:todo-app-db
+        containerRegistry:
+          enabled: true
+          region: us-central1
+          name: todo-app-project
+        cloudOperations:
+          enabled: true
+          projectId: todo-app-project
+    oci:
+      enabled: true
+      features:
+        vault:
+          enabled: true
+          vaultId: ocid1.vault.oc1.phx.aaaaaaa...
+          keyId: ocid1.key.oc1.phx.aaaaaaa...
+        containerRegistry:
+          enabled: true
+          region: us-phoenix-1
+          namespace: todoapp
+        loadBalancer:
+          enabled: true
+          shape: flexible
+          flexMin: 10
+          flexMax: 100
+        fileStorage:
+          enabled: true
+          mountTargetId: ocid1.mounttarget.oc1.phx.aaaaaaa...

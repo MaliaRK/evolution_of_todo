@@ -1,0 +1,1079 @@
+# Graceful Degradation Patterns
+# Configuration for graceful degradation patterns in service communications
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graceful-degradation-config
+  namespace: todo-app
+data:
+  fallback-strategies.yaml: |
+    # Fallback strategies for graceful degradation
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: fallback-strategies
+      namespace: todo-app
+    data:
+      fallback-config.json: |
+        {
+          "fallbackStrategies": {
+            "externalApi": {
+              "name": "external-api-fallback",
+              "enabled": true,
+              "fallbackOrder": [
+                "cache",
+                "defaultResponse",
+                "error"
+              ],
+              "cacheFallback": {
+                "enabled": true,
+                "ttl": 300,
+                "staleWhileRevalidate": 60
+              },
+              "defaultResponseFallback": {
+                "enabled": true,
+                "response": {
+                  "status": 200,
+                  "body": {
+                    "message": "Service temporarily unavailable, showing cached data",
+                    "data": [],
+                    "cached": true
+                  },
+                  "headers": {
+                    "Content-Type": "application/json",
+                    "X-Fallback": "true"
+                  }
+                }
+              },
+              "errorFallback": {
+                "enabled": true,
+                "response": {
+                  "status": 503,
+                  "body": {
+                    "error": "Service unavailable",
+                    "code": "SERVICE_UNAVAILABLE"
+                  },
+                  "headers": {
+                    "Content-Type": "application/json"
+                  }
+                }
+              }
+            },
+            "database": {
+              "name": "database-fallback",
+              "enabled": true,
+              "fallbackOrder": [
+                "readOnlyMode",
+                "cache",
+                "defaultResponse",
+                "error"
+              ],
+              "readOnlyMode": {
+                "enabled": true,
+                "allowedOperations": ["SELECT"],
+                "blockedOperations": ["INSERT", "UPDATE", "DELETE"]
+              },
+              "cacheFallback": {
+                "enabled": true,
+                "ttl": 60,
+                "staleWhileRevalidate": 30
+              },
+              "defaultResponseFallback": {
+                "enabled": true,
+                "response": {
+                  "status": 200,
+                  "body": {
+                    "message": "Database temporarily unavailable, showing default data",
+                    "data": [],
+                    "readOnly": true
+                  },
+                  "headers": {
+                    "Content-Type": "application/json",
+                    "X-ReadOnly": "true"
+                  }
+                }
+              }
+            },
+            "messageQueue": {
+              "name": "message-queue-fallback",
+              "enabled": true,
+              "fallbackOrder": [
+                "directCall",
+                "buffer",
+                "ignore",
+                "error"
+              ],
+              "directCallFallback": {
+                "enabled": true,
+                "description": "Call downstream service directly instead of via queue"
+              },
+              "bufferFallback": {
+                "enabled": true,
+                "description": "Buffer messages in memory for later processing",
+                "maxBufferSize": 1000,
+                "ttl": 300
+              },
+              "ignoreFallback": {
+                "enabled": true,
+                "description": "Ignore non-critical messages"
+              }
+            },
+            "cache": {
+              "name": "cache-fallback",
+              "enabled": true,
+              "fallbackOrder": [
+                "database",
+                "defaultResponse",
+                "error"
+              ],
+              "databaseFallback": {
+                "enabled": true,
+                "description": "Fetch from database when cache is unavailable"
+              },
+              "defaultResponseFallback": {
+                "enabled": true,
+                "response": {
+                  "status": 200,
+                  "body": {
+                    "message": "Cache unavailable, showing default data",
+                    "data": [],
+                    "default": true
+                  },
+                  "headers": {
+                    "Content-Type": "application/json",
+                    "X-Default-Data": "true"
+                  }
+                }
+              }
+            }
+          }
+        }
+  istio-fallback-config.yaml: |
+    # Istio fallback configuration for graceful degradation
+    apiVersion: networking.istio.io/v1alpha3
+    kind: VirtualService
+    metadata:
+      name: todo-app-fallback-virtual-service
+      namespace: todo-app
+    spec:
+      hosts:
+      - todo-app.todo-app.svc.cluster.local
+      http:
+      - match:
+        - headers:
+            degrade-service:
+              exact: "true"
+        route:
+        - destination:
+            host: todo-app-fallback.todo-app.svc.cluster.local
+            port:
+              number: 80
+        fault:
+          abort:
+            percentage:
+              value: 100.0
+            httpStatus: 503
+        retries:
+          attempts: 0
+      - match:
+        - headers:
+            fallback-enabled:
+              exact: "true"
+        route:
+        - destination:
+            host: todo-app-fallback.todo-app.svc.cluster.local
+            port:
+              number: 80
+        timeout: 2s
+        retries:
+          attempts: 2
+          perTryTimeout: 1s
+          retryOn: "5xx,connect-failure"
+      - route:
+        - destination:
+            host: todo-app.todo-app.svc.cluster.local
+            port:
+              number: 80
+        timeout: 5s
+        retries:
+          attempts: 3
+          perTryTimeout: 2s
+          retryOn: "5xx,gateway-error,connect-failure,refused-stream"
+    ---
+    apiVersion: networking.istio.io/v1alpha3
+    kind: DestinationRule
+    metadata:
+      name: todo-app-fallback-destination-rule
+      namespace: todo-app
+    spec:
+      host: todo-app.todo-app.svc.cluster.local
+      trafficPolicy:
+        connectionPool:
+          tcp:
+            maxConnections: 100
+            connectTimeout: 30ms
+          http:
+            http1MaxPendingRequests: 10
+            http2MaxRequests: 100
+            maxRequestsPerConnection: 10
+            maxRetries: 3
+        outlierDetection:
+          consecutive5xxErrors: 3
+          interval: 30s
+          baseEjectionTime: 30s
+          maxEjectionPercent: 10
+          minHealthPercent: 50
+        connectionPool:
+          http:
+            idleTimeout: 30s
+            maxRequestsPerConnection: 100
+            maxRetries: 3
+          tcp:
+            maxConnections: 100
+            connectTimeout: 30ms
+  dapr-fallback-config.yaml: |
+    # Dapr fallback configuration
+    apiVersion: dapr.io/v1alpha1
+    kind: Component
+    metadata:
+      name: fallback-middleware
+      namespace: todo-app
+    spec:
+      type: middleware.http.conditional
+      version: v1
+      metadata:
+      - name: condition
+        value: "header:degrade-service == 'true'"
+      - name: fallbackAction
+        value: "returnResponse"
+      - name: fallbackResponseStatusCode
+        value: "503"
+      - name: fallbackResponseHeaders
+        value: |
+          {
+            "Content-Type": "application/json",
+            "X-Fallback": "true"
+          }
+      - name: fallbackResponseBody
+        value: |
+          {
+            "error": "Service temporarily unavailable",
+            "fallback": true
+          }
+    scopes:
+    - todo-app
+    ---
+    apiVersion: dapr.io/v1alpha1
+    kind: Component
+    metadata:
+      name: circuit-breaker-with-fallback
+      namespace: todo-app
+    spec:
+      type: middleware.http.circuitbreaker
+      version: v1
+      metadata:
+      - name: maxRequestsPerTimeWindow
+        value: "100"
+      - name: timeWindowMs
+        value: "10000"
+      - name: timeoutMs
+        value: "1000"
+      - name: trip
+        value: "consecutiveFailures > 5"
+      - name: fallback
+        value: "fallbackResponse"
+      - name: fallbackResponse
+        value: |
+          {
+            "status": 503,
+            "body": "{\"error\": \"Service temporarily unavailable\", \"fallback\": true}",
+            "headers": {
+              "Content-Type": "application/json",
+              "X-Fallback": "true"
+            }
+          }
+      - name: halfOpenAfterMs
+        value: "60000"
+    scopes:
+    - todo-app
+  application-degradation.yaml: |
+    # Application-level degradation configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: application-degradation-config
+      namespace: todo-app
+    data:
+      degradation-config.properties: |
+        # Degradation configuration for Todo App
+        
+        # Feature flags for degradation modes
+        degradation.mode.readonly.enabled=true
+        degradation.mode.cacheonly.enabled=true
+        degradation.mode.offline.enabled=true
+        
+        # Service degradation thresholds
+        degradation.threshold.response.time=5000
+        degradation.threshold.error.rate=0.1
+        degradation.threshold.timeout.rate=0.05
+        degradation.threshold.consecutive.failures=5
+        
+        # Degradation actions
+        degradation.action.readonly.services=database,external-api
+        degradation.action.cacheonly.services=cache,external-api
+        degradation.action.offline.services=all
+        
+        # Degradation timeouts
+        degradation.timeout.readonly=300000
+        degradation.timeout.cacheonly=600000
+        degradation.timeout.offline=3600000
+        
+        # Fallback data TTL
+        degradation.fallback.data.ttl=300
+        degradation.fallback.data.stale.ttl=60
+        
+        # Monitoring thresholds for automatic degradation
+        degradation.monitoring.response.time.threshold=3000
+        degradation.monitoring.error.rate.threshold=0.05
+        degradation.monitoring.health.check.interval=30000
+      degradation-beans.xml: |
+        <?xml version="1.0" encoding="UTF-8"?>
+        <beans xmlns="http://www.springframework.org/schema/beans"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="
+                   http://www.springframework.org/schema/beans
+                   http://www.springframework.org/schema/beans/spring-beans.xsd">
+        
+          <!-- Degradation Manager -->
+          <bean id="degradationManager" class="com.todoapp.degradation.DegradationManager">
+            <property name="degradationThresholds">
+              <map>
+                <entry key="responseTime" value="5000"/>
+                <entry key="errorRate" value="0.1"/>
+                <entry key="timeoutRate" value="0.05"/>
+                <entry key="consecutiveFailures" value="5"/>
+              </map>
+            </property>
+            <property name="degradationActions">
+              <map>
+                <entry key="readOnly" value-ref="readOnlyDegradationAction"/>
+                <entry key="cacheOnly" value-ref="cacheOnlyDegradationAction"/>
+                <entry key="offline" value-ref="offlineDegradationAction"/>
+              </map>
+            </property>
+          </bean>
+        
+          <!-- Read-Only Degradation Action -->
+          <bean id="readOnlyDegradationAction" class="com.todoapp.degradation.ReadOnlyDegradationAction">
+            <property name="allowedOperations">
+              <list>
+                <value>GET</value>
+                <value>SELECT</value>
+              </list>
+            </property>
+            <property name="blockedOperations">
+              <list>
+                <value>POST</value>
+                <value>PUT</value>
+                <value>PATCH</value>
+                <value>DELETE</value>
+                <value>INSERT</value>
+                <value>UPDATE</value>
+              </list>
+            </property>
+          </bean>
+        
+          <!-- Cache-Only Degradation Action -->
+          <bean id="cacheOnlyDegradationAction" class="com.todoapp.degradation.CacheOnlyDegradationAction">
+            <property name="fallbackTTL" value="300"/>
+            <property name="staleTTL" value="60"/>
+          </bean>
+        
+          <!-- Offline Degradation Action -->
+          <bean id="offlineDegradationAction" class="com.todoapp.degradation.OfflineDegradationAction">
+            <property name="defaultResponse">
+              <map>
+                <entry key="status" value="200"/>
+                <entry key="body">
+                  <map>
+                    <entry key="message" value="Service in offline mode"/>
+                    <entry key="fallback" value="true"/>
+                  </map>
+                </entry>
+              </map>
+            </property>
+          </bean>
+        
+          <!-- Health Check Service -->
+          <bean id="healthCheckService" class="com.todoapp.health.HealthCheckService">
+            <property name="healthCheckInterval" value="30000"/>
+            <property name="degradationManager" ref="degradationManager"/>
+          </bean>
+        </beans>
+  nginx-degradation-config.yaml: |
+    # Nginx ingress degradation configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: nginx-degradation-config
+      namespace: ingress-nginx
+    data:
+      nginx-configuration: |
+        # Degradation configuration for nginx ingress
+        # Custom error pages for degraded service
+        error_page 503 /503.html;
+        location = /503.html {
+          internal;
+          add_header Content-Type text/html;
+          return 200 '<html><body><h1>Service Temporarily Unavailable</h1><p>Our service is temporarily unavailable. Please try again later.</p></body></html>';
+        }
+        
+        # Degradation headers
+        add_header X-Degraded $upstream_status always;
+        add_header X-Fallback-Used "true" always;
+        
+        # Rate limiting during degradation
+        limit_req_zone $binary_remote_addr zone=degraded:10m rate=1r/s;
+        limit_req zone=degraded burst=5 nodelay;
+      server-snippet.conf: |
+        # Server snippet for degradation
+        location ~* "^/api/v1/.*$" {
+          # Check for degradation signals
+          access_by_lua_block {
+            -- Check if service should be degraded based on custom logic
+            local degraded = ngx.var.cookie_degraded
+            if degraded == "true" then
+              ngx.status = 503
+              ngx.header.content_type = "application/json"
+              ngx.say("{\"error\":\"Service temporarily unavailable\",\"degraded\":true}")
+              ngx.exit(503)
+            end
+          }
+          
+          proxy_pass http://todo-app-active;
+          
+          # Degradation settings
+          proxy_intercept_errors on;
+          error_page 503 = @degraded_service;
+        }
+        
+        location @degraded_service {
+          # Serve degraded response
+          add_header X-Degraded-Response "true";
+          add_header Content-Type "application/json";
+          return 200 '{"message":"Service temporarily unavailable","fallback":true,"degraded":true}';
+        }
+  degradation-documentation.md: |
+    # Graceful Degradation Patterns
+    
+    ## Overview
+    This document describes the graceful degradation patterns implemented in the Todo AI system to maintain basic functionality during partial service failures.
+    
+    ## Degradation Modes
+    
+    ### 1. Read-Only Mode
+    - Allows only read operations (GET, SELECT)
+    - Blocks write operations (POST, PUT, DELETE, INSERT, UPDATE)
+    - Provides cached or default data for read requests
+    - Maintains core functionality while preventing data modification
+    
+    ### 2. Cache-Only Mode
+    - Serves data exclusively from cache
+    - Bypasses database and external API calls
+    - Uses stale data if fresh data is unavailable
+    - Maintains fast response times during backend failures
+    
+    ### 3. Offline Mode
+    - Serves completely static fallback responses
+    - No external dependencies
+    - Preserves basic UI functionality
+    - Allows users to view previously loaded data
+    
+    ## Degradation Triggers
+    
+    ### Automatic Triggers
+    - High error rates (>10%)
+    - Slow response times (>5s)
+    - High timeout rates (>5%)
+    - Consecutive failures (>5)
+    - Circuit breaker trips
+    
+    ### Manual Triggers
+    - Planned maintenance
+    - Known issues
+    - Resource constraints
+    - Security incidents
+    
+    ## Fallback Strategies
+    
+    ### 1. Cache Fallback
+    - Serve cached data when primary source fails
+    - Use stale-while-revalidate pattern
+    - TTL-based cache expiration
+    
+    ### 2. Default Response Fallback
+    - Return default/safe responses
+    - Maintain API contract
+    - Inform users of degraded state
+    
+    ### 3. Simplified Functionality Fallback
+    - Disable non-essential features
+    - Maintain core functionality
+    - Reduce resource consumption
+    
+    ## Monitoring and Recovery
+    
+    ### Degradation Monitoring
+    - Track degradation state
+    - Monitor fallback usage
+    - Measure user impact
+    - Alert on extended degradation
+    
+    ### Recovery Process
+    - Health check restoration
+    - Gradual feature re-enablement
+    - Data synchronization
+    - User notification
+    
+    ## Best Practices
+    - Design services to work in degraded mode
+    - Prioritize critical functionality
+    - Maintain fallback data quality
+    - Communicate degradation to users
+    - Monitor degradation impact
+    - Plan for graceful recovery
+  degradation-monitoring.yaml: |
+    # Monitoring configuration for degradation patterns
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: degradation-monitoring-config
+      namespace: monitoring
+    data:
+      prometheus-rules.yaml: |
+        groups:
+        - name: degradation-monitoring
+          rules:
+          - alert: ServiceDegraded
+            expr: degradation_mode_active == 1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Service is in degraded mode"
+              description: "Service {{ $labels.service }} in namespace {{ $labels.namespace }} has been in degraded mode for more than 5 minutes"
+          
+          - alert: HighFallbackUsage
+            expr: rate(fallback_responses_total[5m]) / rate(total_responses[5m]) > 0.2
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High fallback usage detected"
+              description: "Fallback responses exceed 20% of total responses for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: ExtendedDegradation
+            expr: degradation_mode_active == 1 and degradation_mode_duration_seconds > 3600
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Extended service degradation"
+              description: "Service {{ $labels.service }} in namespace {{ $labels.namespace }} has been in degraded mode for more than 1 hour"
+          
+          - alert: DegradationRecoveryFailed
+            expr: increase(degradation_recovery_failures_total[10m]) > 5
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Degradation recovery failing"
+              description: "Degradation recovery has failed more than 5 times in 10 minutes for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+      grafana-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Degradation Patterns Dashboard",
+            "tags": ["degradation", "resilience", "monitoring"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Namespace",
+                  "multi": true,
+                  "name": "namespace",
+                  "options": [],
+                  "query": "label_values(degradation_mode_active, namespace)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                },
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Service",
+                  "multi": true,
+                  "name": "service",
+                  "options": [],
+                  "query": "label_values(degradation_mode_active, service)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Degradation Status",
+                "type": "row"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "NORMAL",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "DEGRADED",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 1
+                },
+                "id": 4,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "degradation_mode_active{namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Degradation Mode Status",
+                "type": "stat"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "degradation_mode_duration_seconds{namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Degradation Duration",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "s",
+                    "label": "Seconds",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 9
+                },
+                "id": 8,
+                "panels": [],
+                "title": "Fallback Usage",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 10,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(fallback_responses_total{namespace=~\"$namespace\", service=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{service}} - Fallback",
+                    "refId": "A"
+                  },
+                  {
+                    "expr": "rate(successful_responses_total{namespace=~\"$namespace\", service=~\"$service\"}[5m])",
+                    "interval": "",
+                    "legendFormat": "{{service}} - Successful",
+                    "refId": "B"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Fallback vs Successful Responses Rate",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "reqps",
+                    "label": "Requests per second",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 10
+                },
+                "hiddenSeries": false,
+                "id": 12,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "rate(fallback_responses_total{namespace=~\"$namespace\", service=~\"$service\"}[5m]) / rate(total_responses{namespace=~\"$namespace\", service=~\"$service\"}[5m]) * 100",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Fallback Response Percentage",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": "Percentage",
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 27,
+            "style": "dark",
+            "tags": ["degradation", "resilience", "monitoring"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Degradation Patterns Dashboard",
+            "uid": "degradation-dashboard",
+            "version": 1
+          }
+        }

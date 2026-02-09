@@ -1,0 +1,522 @@
+# Blue-Green Deployment Configurations
+# Configuration for blue-green deployment patterns
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blue-green-deployment-config
+  namespace: todo-app
+data:
+  blue-green-deployment.yaml: |
+    # Blue-Green Deployment Configuration
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    metadata:
+      name: todo-app-blue-green
+      namespace: todo-app
+    spec:
+      replicas: 2
+      strategy:
+        blueGreen:
+          # Reference to a Service that the Rollout will update as it progresses
+          activeService: todo-app-active
+          # Reference to a Service that the Rollout will update to point to the 'preview' ReplicaSet
+          previewService: todo-app-preview
+          # Indicates if the rollout should automatically promote the new stack to the active service
+          # If omitted, the default behavior is to require manual promotion
+          autoPromotionEnabled: false
+          # Amount of time to wait after scaling up the preview replicaset before promoting
+          # the new stack to the active service
+          autoPromotionSeconds: 30
+          # Pre-promotion analysis that, if specified, will run before the preview service
+          # is added to the active service
+          prePromotionAnalysis:
+            templates:
+            - templateName: success-rate
+            args:
+            - name: service-name
+              value: todo-app-preview.todo-app.svc.cluster.local
+          # Post-promotion analysis that, if specified, will run after the preview service
+          # is added to the active service
+          postPromotionAnalysis:
+            templates:
+            - templateName: success-rate
+            args:
+            - name: service-name
+              value: todo-app-active.todo-app.svc.cluster.local
+          # Scale preview stack to 1 replica during the pause
+          scaleDownPreviewReplicaCount: 1
+      selector:
+        matchLabels:
+          app: todo-app
+      template:
+        metadata:
+          labels:
+            app: todo-app
+        spec:
+          containers:
+          - name: todo-app
+            image: todo-app:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: ENVIRONMENT
+              value: production
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 5
+  blue-service.yaml: |
+    # Blue service (currently active)
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-blue
+      namespace: todo-app
+    spec:
+      selector:
+        app: todo-app
+        version: blue
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+  green-service.yaml: |
+    # Green service (new version)
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-green
+      namespace: todo-app
+    spec:
+      selector:
+        app: todo-app
+        version: green
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+  active-service.yaml: |
+    # Active service (routes to blue or green)
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-active
+      namespace: todo-app
+    spec:
+      selector:
+        app: todo-app
+        version: blue  # Initially points to blue
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+  preview-service.yaml: |
+    # Preview service (routes to green during deployment)
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-preview
+      namespace: todo-app
+    spec:
+      selector:
+        app: todo-app
+        version: green  # Points to green for testing
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: ClusterIP
+  blue-deployment.yaml: |
+    # Blue deployment (current version)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: todo-app-blue
+      namespace: todo-app
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: todo-app
+          version: blue
+      template:
+        metadata:
+          labels:
+            app: todo-app
+            version: blue
+        spec:
+          containers:
+          - name: todo-app
+            image: todo-app:v1.0.0  # Current version
+            ports:
+            - containerPort: 8080
+            env:
+            - name: VERSION
+              value: "blue"
+            - name: ENVIRONMENT
+              value: production
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 5
+  green-deployment.yaml: |
+    # Green deployment (new version)
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: todo-app-green
+      namespace: todo-app
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: todo-app
+          version: green
+      template:
+        metadata:
+          labels:
+            app: todo-app
+            version: green
+        spec:
+          containers:
+          - name: todo-app
+            image: todo-app:v2.0.0  # New version
+            ports:
+            - containerPort: 8080
+            env:
+            - name: VERSION
+              value: "green"
+            - name: ENVIRONMENT
+              value: production
+            livenessProbe:
+              httpGet:
+                path: /health
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: 8080
+              initialDelaySeconds: 5
+              periodSeconds: 5
+  ingress-routing.yaml: |
+    # Ingress configuration for blue-green routing
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-ingress
+      namespace: todo-app
+      annotations:
+        kubernetes.io/ingress.class: "nginx"
+        nginx.ingress.kubernetes.io/canary-by-header: "canary"
+        nginx.ingress.kubernetes.io/canary-by-header-value: "always"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    spec:
+      tls:
+      - hosts:
+        - todo-app.example.com
+        secretName: todo-app-tls
+      rules:
+      - host: todo-app.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-active
+                port:
+                  number: 80
+  blue-green-promotion-job.yaml: |
+    # Job to promote green to active
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: promote-green-to-active
+      namespace: todo-app
+    spec:
+      template:
+        spec:
+          serviceAccountName: blue-green-sa
+          containers:
+          - name: kubectl
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Promote green to active by updating the active service selector
+              echo "Promoting green to active..."
+              
+              # Update the active service to point to green
+              kubectl patch service todo-app-active -n todo-app -p '{"spec":{"selector":{"app":"todo-app","version":"green"}}}'
+              
+              # Optionally scale down blue deployment after promotion
+              kubectl scale deployment todo-app-blue -n todo-app --replicas=0
+              
+              echo "Promotion to green completed successfully"
+          restartPolicy: OnFailure
+  blue-green-rollback-job.yaml: |
+    # Job to rollback to blue
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: rollback-to-blue
+      namespace: todo-app
+    spec:
+      template:
+        spec:
+          serviceAccountName: blue-green-sa
+          containers:
+          - name: kubectl
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Rollback to blue by updating the active service selector
+              echo "Rolling back to blue..."
+              
+              # Update the active service to point to blue
+              kubectl patch service todo-app-active -n todo-app -p '{"spec":{"selector":{"app":"todo-app","version":"blue"}}}'
+              
+              # Optionally scale down green deployment after rollback
+              kubectl scale deployment todo-app-green -n todo-app --replicas=0
+              
+              echo "Rollback to blue completed successfully"
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blue-green-sa
+  namespace: todo-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: blue-green-role
+  namespace: todo-app
+rules:
+- apiGroups: [""]
+  resources: ["services", "pods", "pods/exec"]
+  verbs: ["get", "list", "patch", "update", "create", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "patch", "update", "scale"]
+- apiGroups: ["argoproj.io"]
+  resources: ["rollouts"]
+  verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: blue-green-rolebinding
+  namespace: todo-app
+subjects:
+- kind: ServiceAccount
+  name: blue-green-sa
+  namespace: todo-app
+roleRef:
+  kind: Role
+  name: blue-green-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blue-green-pipeline-config
+  namespace: todo-app
+data:
+  blue-green-pipeline.md: |
+    # Blue-Green Deployment Pipeline
+    
+    ## Overview
+    This pipeline implements a blue-green deployment strategy for the Todo AI system, allowing for zero-downtime deployments with the ability to quickly rollback if issues are detected.
+    
+    ## Pipeline Stages
+    
+    ### 1. Build Stage
+    - Build new application image
+    - Run unit tests
+    - Scan for vulnerabilities
+    - Push image to registry
+    
+    ### 2. Deploy to Green Stage
+    - Deploy new version to green environment
+    - Wait for pods to become ready
+    - Run smoke tests against green environment
+    
+    ### 3. Validation Stage
+    - Run comprehensive tests against green environment
+    - Compare metrics between blue and green
+    - Manual validation if required
+    
+    ### 4. Traffic Switch Stage
+    - Switch traffic from blue to green
+    - Monitor application health
+    - Run post-deployment validation
+    
+    ### 5. Cleanup Stage
+    - Scale down old blue environment
+    - Archive blue deployment configuration
+    
+    ## Rollback Process
+    If issues are detected during or after deployment:
+    - Switch traffic back to blue
+    - Investigate and fix issues in green
+    - Redeploy when ready
+    
+    ## Benefits
+    - Zero downtime deployments
+    - Quick rollback capability
+    - Ability to test in production-like environment
+    - Reduced deployment risk
+  blue-green-pipeline.yaml: |
+    # CI/CD Pipeline for Blue-Green Deployment
+    apiVersion: argoproj.io/v1alpha1
+    kind: Workflow
+    metadata:
+      generateName: blue-green-deployment-
+      namespace: todo-app
+    spec:
+      entrypoint: blue-green-deployment
+      arguments:
+        parameters:
+        - name: image-tag
+          value: "latest"
+        - name: namespace
+          value: "todo-app"
+      templates:
+      - name: blue-green-deployment
+        steps:
+        - - name: deploy-green
+            template: deploy-to-green
+            arguments:
+              parameters:
+              - name: image-tag
+                value: "{{workflow.parameters.image-tag}}"
+        
+        - - name: validate-green
+            template: validate-green
+            arguments:
+              parameters:
+              - name: image-tag
+                value: "{{workflow.parameters.image-tag}}"
+        
+        - - name: switch-traffic
+            template: switch-traffic
+            when: "{{steps.validate-green.status}} == Succeeded"
+        
+        - - name: cleanup-blue
+            template: cleanup-blue
+            when: "{{steps.switch-traffic.status}} == Succeeded"
+        
+        - - name: rollback
+            template: rollback-to-blue
+            when: "{{steps.validate-green.status}} == Failed || {{steps.switch-traffic.status}} == Failed"
+      
+      - name: deploy-to-green
+        inputs:
+          parameters:
+          - name: image-tag
+        container:
+          image: bitnami/kubectl:latest
+          command:
+          - /bin/bash
+          - -c
+          - |
+            # Update green deployment with new image
+            kubectl set image deployment/todo-app-green -n {{workflow.parameters.namespace}} todo-app=todo-app:{{inputs.parameters.image-tag}}
+            
+            # Wait for deployment to complete
+            kubectl rollout status deployment/todo-app-green -n {{workflow.parameters.namespace}} --timeout=300s
+            
+            echo "Green deployment completed"
+      
+      - name: validate-green
+        inputs:
+          parameters:
+          - name: image-tag
+        container:
+          image: appropriate/curl:latest
+          command:
+          - /bin/bash
+          - -c
+          - |
+            # Test the green service directly
+            GREEN_SVC_IP=$(kubectl get svc todo-app-preview -n {{workflow.parameters.namespace}} -o jsonpath='{.spec.clusterIP}')
+            
+            # Run health checks
+            for i in {1..30}; do
+              if curl -f http://$GREEN_SVC_IP/health; then
+                echo "Green service is healthy"
+                exit 0
+              fi
+              echo "Waiting for green service to be healthy... ($i/30)"
+              sleep 10
+            done
+            
+            echo "Green service failed to become healthy"
+            exit 1
+      
+      - name: switch-traffic
+        container:
+          image: bitnami/kubectl:latest
+          command:
+          - /bin/bash
+          - -c
+          - |
+            # Switch active service to point to green
+            kubectl patch service todo-app-active -n {{workflow.parameters.namespace}} -p '{"spec":{"selector":{"app":"todo-app","version":"green"}}}'
+            
+            # Wait for DNS propagation if needed
+            sleep 30
+            
+            echo "Traffic switched to green"
+      
+      - name: cleanup-blue
+        container:
+          image: bitnami/kubectl:latest
+          command:
+          - /bin/bash
+          - -c
+          - |
+            # Scale down blue deployment
+            kubectl scale deployment/todo-app-blue -n {{workflow.parameters.namespace}} --replicas=0
+            
+            echo "Blue deployment scaled down"
+      
+      - name: rollback-to-blue
+        container:
+          image: bitnami/kubectl:latest
+          command:
+          - /bin/bash
+          - -c
+          - |
+            # Switch active service back to blue
+            kubectl patch service todo-app-active -n {{workflow.parameters.namespace}} -p '{"spec":{"selector":{"app":"todo-app","version":"blue"}}}'
+            
+            echo "Rolled back to blue"

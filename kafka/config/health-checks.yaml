@@ -1,0 +1,106 @@
+# Kafka Health Check and Readiness Probes
+# Configuration for Kubernetes health checks for Kafka
+
+# Kafka broker health check script
+kafka_health_check_script: |
+  #!/bin/bash
+  # Check if Kafka broker is running and responsive
+  
+  # Check if Kafka process is running
+  if ! pgrep -f kafka.Kafka > /dev/null; then
+    echo "Kafka process not running"
+    exit 1
+  fi
+  
+  # Check if Kafka is listening on the expected port
+  if ! nc -z localhost 9092; then
+    echo "Kafka not listening on port 9092"
+    exit 1
+  fi
+  
+  # Try to connect to Kafka and list topics (basic functionality test)
+  if ! kafka-topics --bootstrap-server localhost:9092 --list --timeout 10000 2>/dev/null; then
+    echo "Cannot connect to Kafka or list topics"
+    exit 1
+  fi
+  
+  # Check if expected topics exist
+  EXPECTED_TOPICS=("todo-task-events" "user-activity-events" "system-metrics")
+  for topic in "${EXPECTED_TOPICS[@]}"; do
+    if ! kafka-topics --bootstrap-server localhost:9092 --describe --topic "$topic" --timeout 10000 2>/dev/null; then
+      echo "Expected topic $topic does not exist"
+      # Note: This might be OK depending on your deployment strategy
+      # For readiness, we might not require all topics to exist yet
+    fi
+  done
+  
+  echo "Kafka health check passed"
+  exit 0
+
+# Kubernetes liveness probe configuration
+liveness_probe:
+  exec:
+    command:
+      - sh
+      - -c
+      - |
+        #!/bin/bash
+        # Simple check if Kafka process is running
+        if pgrep -f kafka.Kafka > /dev/null; then
+          exit 0
+        else
+          exit 1
+        fi
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+# Kubernetes readiness probe configuration
+readiness_probe:
+  exec:
+    command:
+      - sh
+      - -c
+      - |
+        #!/bin/bash
+        # Check if Kafka is ready to serve requests
+        if nc -z localhost 9092 && kafka-topics --bootstrap-server localhost:9092 --list --timeout 5000 > /dev/null 2>&1; then
+          exit 0
+        else
+          exit 1
+        fi
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Startup probe configuration (for slow-starting Kafka instances)
+startup_probe:
+  exec:
+    command:
+      - sh
+      - -c
+      - |
+        #!/bin/bash
+        # Check if Kafka is fully started up
+        if pgrep -f kafka.Kafka > /dev/null && nc -z localhost 9092; then
+          exit 0
+        else
+          exit 1
+        fi
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 30  # Allow up to 150 seconds for startup
+
+# Health check endpoints for monitoring
+health_endpoints:
+  # JMX metrics endpoint (if JMX is enabled)
+  jmx_metrics: "http://localhost:9999/metrics"
+  
+  # Kafka REST proxy health endpoint (if available)
+  rest_proxy_health: "http://localhost:8082/health"
+  
+  # Custom health check endpoint
+  custom_health: "http://localhost:8090/health"

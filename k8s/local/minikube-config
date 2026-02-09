@@ -1,0 +1,18 @@
+# Minikube configuration for local development
+# Resource limits and addons configuration
+
+# Start minikube with specific resources
+minikube start --cpus=4 --memory=8192 --disk-size=40g
+
+# Enable required addons
+minikube addons enable ingress
+minikube addons enable metrics-server
+minikube addons enable registry
+
+# Set profile for todo app
+minikube profile todo-app-dev
+
+# Configuration options
+driver: virtualbox
+container-runtime: docker
+kubernetes-version: v1.25.3

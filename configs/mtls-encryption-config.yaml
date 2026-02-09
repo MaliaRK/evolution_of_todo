@@ -1,0 +1,241 @@
+# mTLS Encryption Configuration
+# Configuration for mTLS encryption in service-to-service communication
+
+# Istio-based mTLS configuration
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT  # Require mTLS for all communication in the mesh
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: todo-app-mtls
+  namespace: todo-app
+spec:
+  selector:
+    matchLabels:
+      app: todo-app
+  mtls:
+    mode: STRICT  # Require mTLS for todo-app services
+---
+apiVersion: security.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: todo-app-dr
+  namespace: todo-app
+spec:
+  host: todo-app.todo-app.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+    portLevelSettings:
+    - port:
+        number: 80
+      connectionPool:
+        http:
+          http2MaxRequests: 1000
+    tls:
+      mode: ISTIO_MUTUAL  # Use Istio's built-in mTLS
+---
+apiVersion: security.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: dapr-mtls
+  namespace: dapr-system
+spec:
+  host: "*.dapr-system.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL  # Use Istio's built-in mTLS for Dapr services
+---
+apiVersion: security.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: kafka-mtls
+  namespace: kafka
+spec:
+  host: kafka.kafka.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL  # Use Istio's built-in mTLS for Kafka
+
+# Certificate management with cert-manager
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: todo-app
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: todo-app-cert
+  namespace: todo-app
+spec:
+  secretName: todo-app-tls-secret
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+    - todo-app
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  dnsNames:
+  - todo-app.todo-app.svc.cluster.local
+  - todo-app.todo-app.svc
+  - todo-app
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dapr-cert
+  namespace: dapr-system
+spec:
+  secretName: dapr-tls-secret
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+    - dapr
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  dnsNames:
+  - "*.dapr-system.svc.cluster.local"
+  - "*.dapr-system.svc"
+  - dapr-sidecar-injector.dapr-system.svc
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kafka-cert
+  namespace: kafka
+spec:
+  secretName: kafka-tls-secret
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  subject:
+    organizations:
+    - kafka
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  dnsNames:
+  - kafka.kafka.svc.cluster.local
+  - kafka.kafka.svc
+  - kafka
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+
+# Dapr mTLS configuration
+---
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata:
+  name: dapr-mtls-config
+  namespace: dapr-system
+spec:
+  mtls:
+    enabled: true
+    workloadCertTTL: "24h"
+    allowedClockSkew: "15m"
+  tracing:
+    samplingRate: "1"
+    zipkin:
+      endpointAddress: "http://jaeger-collector:9411/api/v2/spans"
+
+# Custom mTLS configuration for applications
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mtls-config
+  namespace: todo-app
+data:
+  server-cert.pem: |
+    # Server certificate will be mounted here by cert-manager
+  server-key.pem: |
+    # Server private key will be mounted here by cert-manager
+  ca-cert.pem: |
+    # CA certificate for validating client certificates
+  client-cert.pem: |
+    # Client certificate for outbound connections
+  client-key.pem: |
+    # Client private key for outbound connections
+  config.json: |
+    {
+      "mtls": {
+        "enabled": true,
+        "serverCertPath": "/etc/tls/server-cert.pem",
+        "serverKeyPath": "/etc/tls/server-key.pem",
+        "caCertPath": "/etc/tls/ca-cert.pem",
+        "clientCertPath": "/etc/tls/client-cert.pem",
+        "clientKeyPath": "/etc/tls/client-key.pem",
+        "requireClientCert": true,
+        "cipherSuites": [
+          "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+          "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+        ],
+        "minVersion": "TLS_1_2",
+        "maxVersion": "TLS_1_3"
+      }
+    }
+
+# Network policies to enforce encrypted traffic
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mtls-enforcement
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-app
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: dapr-system
+    ports:
+    - protocol: TCP
+      port: 3500  # Dapr sidecar port - should be encrypted
+    - protocol: TCP
+      port: 50001  # Dapr sidecar API port - should be encrypted
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kafka
+    ports:
+    - protocol: TCP
+      port: 9093  # Kafka TLS port

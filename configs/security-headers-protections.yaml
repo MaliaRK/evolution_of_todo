@@ -1,0 +1,479 @@
+# Security Headers and Protections Configuration
+# Configuration for security headers and protections in the Todo AI system
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: todo-app-ingress
+  namespace: todo-app
+  annotations:
+    # Security headers via nginx ingress controller
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options nosniff";
+      more_set_headers "X-XSS-Protection 1; mode=block";
+      more_set_headers "Strict-Transport-Security max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Referrer-Policy strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy geolocation=(), microphone=(), camera=()";
+      more_set_headers "Content-Security-Policy default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';";
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+    nginx.ingress.kubernetes.io/rate-limit-requests-per-second: "5"
+    # SSL configuration
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - todo-app.example.com
+    secretName: todo-app-tls
+  rules:
+  - host: todo-app.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: todo-app-service
+            port:
+              number: 80
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: todo-app
+spec:
+  headers:
+    browserXssFilter: true
+    contentTypeNosniff: true
+    forceSTSHeader: true
+    stsIncludeSubdomains: true
+    stsPreload: true
+    stsSeconds: 31536000
+    customFrameOptionsValue: SAMEORIGIN
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+    customResponseHeaders:
+      X-Robots-Tag: "none"
+      X-Permitted-Cross-Domain-Policies: "none"
+    referrerPolicy: "strict-origin-when-cross-origin"
+    contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https: wss:;"
+    permissionsPolicy: "geolocation=(), microphone=(), camera=()"
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: todo-app-ingressroute
+  namespace: todo-app
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`todo-app.example.com`)
+    kind: Rule
+    services:
+    - name: todo-app-service
+      port: 80
+    middlewares:
+    - name: security-headers
+  tls:
+    secretName: todo-app-tls
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-security-policy
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-app
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: dapr-system
+    ports:
+    - protocol: TCP
+      port: 3500
+    - protocol: TCP
+      port: 50001
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-config
+  namespace: todo-app
+data:
+  # Security configuration for the application
+  security.yaml: |
+    security:
+      headers:
+        enabled: true
+        x-frame-options: "SAMEORIGIN"
+        x-content-type-options: "nosniff"
+        x-xss-protection: "1; mode=block"
+        strict-transport-security: "max-age=31536000; includeSubDomains; preload"
+        referrer-policy: "strict-origin-when-cross-origin"
+        content-security-policy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"
+        permissions-policy: "geolocation=(), microphone=(), camera=()"
+        x-permitted-cross-domain-policies: "none"
+        x-robots-tag: "none"
+      csrf:
+        enabled: true
+        header-name: "X-CSRF-Token"
+        cookie-name: "csrf-token"
+        secure: true
+        http-only: true
+        same-site: "strict"
+      cors:
+        enabled: true
+        allowed-origins:
+          - "https://todo-app.example.com"
+          - "https://www.todo-app.example.com"
+        allowed-methods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        allowed-headers:
+          - "Content-Type"
+          - "Authorization"
+          - "X-Requested-With"
+          - "Accept"
+          - "Origin"
+        allow-credentials: true
+        max-age: 86400
+      rate-limiting:
+        enabled: true
+        requests-per-minute: 100
+        burst-size: 200
+        per-ip: true
+      authentication:
+        enabled: true
+        method: "oauth2-jwt"
+        token-validation:
+          issuer: "https://auth.todo-app.com"
+          audience: "todo-app"
+          jwks-uri: "https://auth.todo-app.com/.well-known/jwks.json"
+        session-management:
+          timeout: 3600
+          secure: true
+          http-only: true
+          same-site: "strict"
+      authorization:
+        enabled: true
+        rbac:
+          enabled: true
+          policy-file: "/etc/security/policies.yaml"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dapr-security-config
+  namespace: dapr-system
+data:
+  # Dapr security configuration
+  config.yaml: |
+    apiVersion: dapr.io/v1alpha1
+    kind: Configuration
+    metadata:
+      name: dapr-security-config
+      namespace: dapr-system
+    spec:
+      tracing:
+        samplingRate: "1"
+        zipkin:
+          endpointAddress: "http://jaeger:9411/api/v2/spans"
+      metric:
+        enabled: true
+      mtls:
+        enabled: true
+        workloadCertTTL: "24h"
+        allowedClockSkew: "15m"
+      httpPipeline:
+        handlers:
+        - name: validator
+          type: middleware.http.validator
+      secrets:
+        scopes:
+        - storeName: kubernetes
+          defaultAccess: allow
+---
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: validator-middleware
+  namespace: todo-app
+spec:
+  type: middleware.http.validator
+  version: v1
+  metadata:
+  - name: allowedHeaders
+    value: "Content-Type,Authorization,X-Requested-With,Accept,Origin,X-Request-ID,X-Auth-Token"
+  - name: allowedMethods
+    value: "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD"
+  - name: allowedOrigins
+    value: "https://todo-app.example.com,https://www.todo-app.example.com"
+  - name: allowCredentials
+    value: "true"
+  - name: maxAge
+    value: "86400"
+scopes:
+  - todo-app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waf-proxy
+  namespace: todo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: waf-proxy
+  template:
+    metadata:
+      labels:
+        app: waf-proxy
+      annotations:
+        # Security annotations
+        container.apparmor.security.beta.kubernetes.io/waf-proxy: runtime/default
+        seccomp.security.alpha.kubernetes.io/pod: runtime/default
+    spec:
+      serviceAccountName: todo-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
+      containers:
+      - name: waf-proxy
+        image: owasp/modsecurity-crs:3.3-apache
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        env:
+        - name: MODSECURITY_CONFIG
+          value: |
+            SecRuleEngine On
+            SecRequestBodyAccess On
+            SecResponseBodyAccess On
+            SecRule REQUEST_HEADERS:Content-Type "text/xml" \
+              "id:1000,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=XML"
+            SecRule REQUEST_HEADERS:Content-Type "application/json" \
+              "id:1001,phase:1,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+            SecRule REQUEST_URI "@streq /graphql" \
+              "id:1002,phase:2,t:none,t:lowercase,pass,nolog,ctl:requestBodyProcessor=JSON"
+            SecRule REQUEST_BODY "@validateDTD" \
+              "id:1003,phase:2,deny,msg:'DTD not allowed'"
+            SecRule REQUEST_COOKIES "@detectSQLi" \
+              "id:1004,phase:2,deny,msg:'SQL injection attack detected'"
+            SecRule REQUEST_COOKIES "@detectXSS" \
+              "id:1005,phase:2,deny,msg:'XSS attack detected'"
+            SecRule ARGS "@detectSQLi" \
+              "id:1006,phase:2,deny,msg:'SQL injection attack detected'"
+            SecRule ARGS "@detectXSS" \
+              "id:1007,phase:2,deny,msg:'XSS attack detected'"
+        volumeMounts:
+        - name: modsecurity-config
+          mountPath: /etc/modsecurity
+        - name: crs-rules
+          mountPath: /etc/modsecurity-crs
+      volumes:
+      - name: modsecurity-config
+        configMap:
+          name: modsecurity-config
+      - name: crs-rules
+        configMap:
+          name: crs-rules
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: modsecurity-config
+  namespace: todo-app
+data:
+  modsecurity.conf: |
+    # ModSecurity Core Rules Set Configuration
+    Include /etc/modsecurity-crs/crs-setup.conf.example
+    Include /etc/modsecurity-crs/rules/*.conf
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crs-rules
+  namespace: todo-app
+data:
+  crs-setup.conf.example: |
+    # CRS Setup Configuration
+    SecAction \
+      "id:900000,\
+      phase:1,\
+      t:none,\
+      nolog,\
+      pass,\
+      ctl:ruleEngine=DetectionOnly,\
+      setvar:tx.blocking_paranoia_level=1,\
+      setvar:tx.anomaly_score_blocking=on,\
+      setvar:tx.sql_injection_score_threshold=5,\
+      setvar:tx.xss_score_threshold=5,\
+      setvar:tx.highest_severity=0"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: waf-policy
+  namespace: todo-app
+spec:
+  podSelector:
+    matchLabels:
+      app: waf-proxy
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: todo-app
+    ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: waf-proxy-service
+  namespace: todo-app
+spec:
+  selector:
+    app: waf-proxy
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+    - protocol: TCP
+      port: 443
+      targetPort: 443
+  type: LoadBalancer
+---
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: restricted-psp
+spec:
+  privileged: false
+  # Prevent root user
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  # Prevent privilege escalation
+  allowPrivilegeEscalation: false
+  # Drop all capabilities
+  requiredDropCapabilities:
+    - ALL
+  # Allow only specific volumes
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  # Allow only specific host paths
+  allowedHostPaths:
+    - pathPrefix: "/tmp"
+      readOnly: true
+  # Allow only specific host ports
+  allowedHostPorts:
+    - min: 80
+      max: 80
+    - min: 443
+      max: 443
+  # Allow only specific host network
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  # SELinux settings
+  seLinux:
+    rule: 'RunAsAny'
+  # FS group settings
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  # Supplemental group settings
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: psp:restricted
+rules:
+- apiGroups: ['policy']
+  resources: ['podsecuritypolicies']
+  verbs:     ['use']
+  resourceNames:
+  - restricted-psp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: psp:restricted
+subjects:
+- kind: ServiceAccount
+  name: todo-app-sa
+  namespace: todo-app
+roleRef:
+  kind: ClusterRole
+  name: psp:restricted
+  apiGroup: rbac.authorization.k8s.io

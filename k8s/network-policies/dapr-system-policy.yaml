@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dapr-system-network-policy
+  namespace: dapr-system
+spec:
+  podSelector:
+    matchLabels:
+      app: dapr
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: todo-app
+    - podSelector:
+        matchLabels:
+          app: dapr
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: todo-app
+    - namespaceSelector:
+        matchLabels:
+          name: kafka

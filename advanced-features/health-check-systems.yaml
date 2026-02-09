@@ -1,0 +1,1417 @@
+# Comprehensive Health Check Systems
+# Configuration for comprehensive health check systems in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-check-systems
+  namespace: todo-app
+data:
+  application-health-checks.yaml: |
+    # Application-level health checks
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: application-health-checks
+      namespace: todo-app
+    data:
+      health-check-config.json: |
+        {
+          "healthChecks": {
+            "livenessProbe": {
+              "path": "/healthz",
+              "port": 8080,
+              "initialDelaySeconds": 30,
+              "periodSeconds": 10,
+              "timeoutSeconds": 5,
+              "failureThreshold": 3,
+              "successThreshold": 1,
+              "httpHeaders": [
+                {
+                  "name": "X-Health-Check",
+                  "value": "liveness"
+                }
+              ]
+            },
+            "readinessProbe": {
+              "path": "/readyz",
+              "port": 8080,
+              "initialDelaySeconds": 5,
+              "periodSeconds": 5,
+              "timeoutSeconds": 3,
+              "failureThreshold": 3,
+              "successThreshold": 1,
+              "httpHeaders": [
+                {
+                  "name": "X-Health-Check",
+                  "value": "readiness"
+                }
+              ]
+            },
+            "startupProbe": {
+              "path": "/startupz",
+              "port": 8080,
+              "initialDelaySeconds": 10,
+              "periodSeconds": 10,
+              "timeoutSeconds": 5,
+              "failureThreshold": 30,
+              "successThreshold": 1,
+              "httpHeaders": [
+                {
+                  "name": "X-Health-Check",
+                  "value": "startup"
+                }
+              ]
+            }
+          },
+          "customHealthChecks": [
+            {
+              "name": "database-connectivity",
+              "type": "database",
+              "endpoint": "/health/database",
+              "timeout": 5000,
+              "interval": 30000,
+              "threshold": 3,
+              "critical": true
+            },
+            {
+              "name": "cache-connectivity",
+              "type": "redis",
+              "endpoint": "/health/cache",
+              "timeout": 3000,
+              "interval": 15000,
+              "threshold": 2,
+              "critical": false
+            },
+            {
+              "name": "external-api",
+              "type": "http",
+              "endpoint": "/health/external-api",
+              "timeout": 10000,
+              "interval": 60000,
+              "threshold": 5,
+              "critical": false
+            },
+            {
+              "name": "message-queue",
+              "type": "kafka",
+              "endpoint": "/health/message-queue",
+              "timeout": 5000,
+              "interval": 30000,
+              "threshold": 3,
+              "critical": true
+            }
+          ],
+          "healthAggregation": {
+            "overallHealthEndpoint": "/health/overall",
+            "aggregationStrategy": "weighted",
+            "weights": {
+              "liveness": 0.3,
+              "readiness": 0.3,
+              "database": 0.2,
+              "cache": 0.1,
+              "external-api": 0.05,
+              "message-queue": 0.05
+            }
+          }
+        }
+      health-check-endpoints.js: |
+        // Health check endpoints implementation
+        const express = require('express');
+        const router = express.Router();
+        const db = require('../database/connection');
+        const redis = require('../cache/redis');
+        const kafka = require('../messaging/kafka');
+        const externalApi = require('../services/external-api');
+        
+        // Liveness probe - checks if application is running
+        router.get('/healthz', async (req, res) => {
+          try {
+            // Check if main application components are running
+            const appStatus = { status: 'running', timestamp: new Date().toISOString() };
+            res.status(200).json(appStatus);
+          } catch (error) {
+            res.status(503).json({ status: 'unhealthy', error: error.message });
+          }
+        });
+        
+        // Readiness probe - checks if application is ready to serve traffic
+        router.get('/readyz', async (req, res) => {
+          try {
+            // Check if all required services are available
+            const checks = await Promise.allSettled([
+              db.ping(),
+              redis.ping(),
+              kafka.isConnected(),
+              externalApi.isAvailable()
+            ]);
+            
+            const results = {
+              status: 'ready',
+              timestamp: new Date().toISOString(),
+              checks: {
+                database: checks[0].status === 'fulfilled',
+                cache: checks[1].status === 'fulfilled',
+                messageQueue: checks[2].status === 'fulfilled',
+                externalApi: checks[3].status === 'fulfilled'
+              }
+            };
+            
+            // If any critical check failed, return not ready
+            if (!results.checks.database || !results.checks.messageQueue) {
+              results.status = 'not ready';
+              res.status(503).json(results);
+            } else {
+              res.status(200).json(results);
+            }
+          } catch (error) {
+            res.status(503).json({ status: 'not ready', error: error.message });
+          }
+        });
+        
+        // Startup probe - checks if application has completed startup
+        router.get('/startupz', async (req, res) => {
+          try {
+            // Check if all initialization tasks are complete
+            const startupStatus = {
+              status: 'started',
+              timestamp: new Date().toISOString(),
+              initialized: {
+                database: db.isConnected(),
+                cache: redis.isConnected(),
+                messageQueue: kafka.isConnected(),
+                externalServices: externalApi.areInitialized()
+              }
+            };
+            
+            // All initialization must be complete
+            if (Object.values(startupStatus.initialized).every(status => status)) {
+              res.status(200).json(startupStatus);
+            } else {
+              res.status(503).json({ ...startupStatus, status: 'starting' });
+            }
+          } catch (error) {
+            res.status(503).json({ status: 'starting', error: error.message });
+          }
+        });
+        
+        // Database connectivity health check
+        router.get('/health/database', async (req, res) => {
+          try {
+            await db.query('SELECT 1');
+            res.status(200).json({ status: 'healthy', component: 'database', timestamp: new Date().toISOString() });
+          } catch (error) {
+            res.status(503).json({ status: 'unhealthy', component: 'database', error: error.message });
+          }
+        });
+        
+        // Cache connectivity health check
+        router.get('/health/cache', async (req, res) => {
+          try {
+            await redis.ping();
+            res.status(200).json({ status: 'healthy', component: 'cache', timestamp: new Date().toISOString() });
+          } catch (error) {
+            res.status(503).json({ status: 'unhealthy', component: 'cache', error: error.message });
+          }
+        });
+        
+        // External API health check
+        router.get('/health/external-api', async (req, res) => {
+          try {
+            const response = await externalApi.healthCheck();
+            res.status(200).json({ 
+              status: response.ok ? 'healthy' : 'unhealthy', 
+              component: 'external-api', 
+              timestamp: new Date().toISOString(),
+              details: response
+            });
+          } catch (error) {
+            res.status(503).json({ status: 'unhealthy', component: 'external-api', error: error.message });
+          }
+        });
+        
+        // Message queue health check
+        router.get('/health/message-queue', async (req, res) => {
+          try {
+            const isConnected = await kafka.isConnected();
+            res.status(isConnected ? 200 : 503).json({ 
+              status: isConnected ? 'healthy' : 'unhealthy', 
+              component: 'message-queue', 
+              timestamp: new Date().toISOString()
+            });
+          } catch (error) {
+            res.status(503).json({ status: 'unhealthy', component: 'message-queue', error: error.message });
+          }
+        });
+        
+        // Overall health aggregation
+        router.get('/health/overall', async (req, res) => {
+          try {
+            const checks = await Promise.allSettled([
+              fetch('/healthz').then(r => r.json()),
+              fetch('/readyz').then(r => r.json()),
+              fetch('/health/database').then(r => r.json()),
+              fetch('/health/cache').then(r => r.json()),
+              fetch('/health/external-api').then(r => r.json()),
+              fetch('/health/message-queue').then(r => r.json())
+            ]);
+            
+            const results = {
+              timestamp: new Date().toISOString(),
+              overallStatus: 'healthy',
+              components: {
+                liveness: checks[0].status === 'fulfilled' ? checks[0].value : { status: 'error' },
+                readiness: checks[1].status === 'fulfilled' ? checks[1].value : { status: 'error' },
+                database: checks[2].status === 'fulfilled' ? checks[2].value : { status: 'error' },
+                cache: checks[3].status === 'fulfilled' ? checks[3].value : { status: 'error' },
+                externalApi: checks[4].status === 'fulfilled' ? checks[4].value : { status: 'error' },
+                messageQueue: checks[5].status === 'fulfilled' ? checks[5].value : { status: 'error' }
+              }
+            };
+            
+            // Determine overall status based on critical components
+            if (results.components.database.status !== 'healthy' || 
+                results.components.messageQueue.status !== 'healthy' ||
+                results.components.liveness.status !== 'running' ||
+                results.components.readiness.status !== 'ready') {
+              results.overallStatus = 'unhealthy';
+            } else if (results.components.cache.status !== 'healthy' || 
+                      results.components.externalApi.status !== 'healthy') {
+              results.overallStatus = 'degraded';
+            }
+            
+            const statusCode = results.overallStatus === 'healthy' ? 200 :
+                             results.overallStatus === 'degraded' ? 207 : 503;
+            
+            res.status(statusCode).json(results);
+          } catch (error) {
+            res.status(503).json({ status: 'error', error: error.message });
+          }
+        });
+        
+        module.exports = router;
+  infrastructure-health-checks.yaml: |
+    # Infrastructure-level health checks
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: infrastructure-health-checks
+      namespace: todo-app
+    data:
+      node-health-check.yaml: |
+        # Node health check configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: node-health-check-config
+          namespace: kube-system
+        data:
+          node-problem-detector-config.json: |
+            {
+              "pluginConfigs": [
+                {
+                  "plugin": "system-stats-monitor",
+                  "pluginConfig": {
+                    "systemStatsMonitorConfig": {
+                      "cpuConfig": {
+                        "cpuUsageThreshold": 90
+                      },
+                      "memoryConfig": {
+                        "memoryUsageThreshold": 90
+                      },
+                      "filesystemConfig": {
+                        "filesystemUsageThreshold": 85
+                      }
+                    }
+                  }
+                },
+                {
+                  "plugin": "system-log-monitor",
+                  "pluginConfig": {
+                    "logMonitorConfig": {
+                      "plugin": "journald",
+                      "source": "kernel",
+                      "configPath": "/config/kernel-monitor.json"
+                    }
+                  }
+                }
+              ]
+            }
+      cluster-health-check.yaml: |
+        # Cluster health check configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: cluster-health-check-config
+          namespace: monitoring
+        data:
+          cluster-health-check.json: |
+            {
+              "checks": [
+                {
+                  "name": "etcd-health",
+                  "type": "http",
+                  "endpoint": "https://localhost:2379/health",
+                  "interval": 30,
+                  "timeout": 10,
+                  "critical": true,
+                  "auth": {
+                    "type": "client-certificate",
+                    "cert": "/etc/ssl/etcd/ssl/node-*.pem",
+                    "key": "/etc/ssl/etcd/ssl/node-*-key.pem"
+                  }
+                },
+                {
+                  "name": "apiserver-health",
+                  "type": "http",
+                  "endpoint": "https://localhost:6443/healthz",
+                  "interval": 10,
+                  "timeout": 5,
+                  "critical": true,
+                  "headers": {
+                    "Authorization": "Bearer <token>"
+                  }
+                },
+                {
+                  "name": "scheduler-health",
+                  "type": "http",
+                  "endpoint": "http://localhost:10251/healthz",
+                  "interval": 30,
+                  "timeout": 10,
+                  "critical": true
+                },
+                {
+                  "name": "controller-manager-health",
+                  "type": "http",
+                  "endpoint": "http://localhost:10252/healthz",
+                  "interval": 30,
+                  "timeout": 10,
+                  "critical": true
+                },
+                {
+                  "name": "node-status",
+                  "type": "kubernetes-api",
+                  "query": "GET /api/v1/nodes",
+                  "interval": 60,
+                  "timeout": 15,
+                  "critical": true,
+                  "conditions": [
+                    {
+                      "field": "status.conditions",
+                      "match": {
+                        "type": "Ready",
+                        "status": "True"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "name": "pod-status",
+                  "type": "kubernetes-api",
+                  "query": "GET /api/v1/namespaces/todo-app/pods",
+                  "interval": 30,
+                  "timeout": 10,
+                  "critical": false,
+                  "conditions": [
+                    {
+                      "field": "status.phase",
+                      "match": "Running"
+                    }
+                  ]
+                }
+              ],
+              "aggregation": {
+                "strategy": "majority",
+                "threshold": 0.6
+              },
+              "notifications": {
+                "webhook": {
+                  "url": "http://health-notifications:8080/webhook",
+                  "timeout": 5
+                },
+                "email": {
+                  "recipients": ["admin@todo-app.com"],
+                  "smtp": {
+                    "server": "smtp.todo-app.com",
+                    "port": 587
+                  }
+                }
+              }
+            }
+      service-health-check.yaml: |
+        # Service health check configuration
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: service-health-check-config
+          namespace: monitoring
+        data:
+          service-health-check.json: |
+            {
+              "services": [
+                {
+                  "name": "todo-app-service",
+                  "namespace": "todo-app",
+                  "type": "http",
+                  "endpoint": "http://todo-app.todo-app.svc.cluster.local/healthz",
+                  "port": 80,
+                  "interval": 10,
+                  "timeout": 5,
+                  "retries": 3,
+                  "critical": true,
+                  "expectedStatus": 200
+                },
+                {
+                  "name": "dapr-sidecar-injector",
+                  "namespace": "dapr-system",
+                  "type": "http",
+                  "endpoint": "http://dapr-sidecar-injector.dapr-system.svc.cluster.local/healthz",
+                  "port": 4000,
+                  "interval": 15,
+                  "timeout": 5,
+                  "retries": 2,
+                  "critical": true,
+                  "expectedStatus": 200
+                },
+                {
+                  "name": "kafka-service",
+                  "namespace": "kafka",
+                  "type": "tcp",
+                  "endpoint": "kafka.kafka.svc.cluster.local",
+                  "port": 9092,
+                  "interval": 30,
+                  "timeout": 10,
+                  "retries": 3,
+                  "critical": true
+                },
+                {
+                  "name": "database-service",
+                  "namespace": "todo-app",
+                  "type": "tcp",
+                  "endpoint": "todo-app-db.todo-app.svc.cluster.local",
+                  "port": 5432,
+                  "interval": 30,
+                  "timeout": 10,
+                  "retries": 3,
+                  "critical": true
+                }
+              ],
+              "healthAggregation": {
+                "window": 300,
+                "aggregationFunction": "average",
+                "threshold": 0.9
+              }
+            }
+  health-check-monitoring.yaml: |
+    # Health check monitoring configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: health-check-monitoring
+      namespace: monitoring
+    data:
+      prometheus-rules.yaml: |
+        groups:
+        - name: health-check-monitoring
+          rules:
+          - alert: ServiceUnhealthy
+            expr: health_check_status == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service is unhealthy"
+              description: "Service {{ $labels.service }} in namespace {{ $labels.namespace }} has been unhealthy for more than 1 minute"
+          
+          - alert: HighErrorRate
+            expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High error rate detected"
+              description: "Error rate exceeded 5% for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: HighLatency
+            expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High latency detected"
+              description: "95th percentile response time exceeded 2 seconds for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: PodNotReady
+            expr: kube_pod_status_ready{condition="false",namespace="todo-app"} == 1
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod is not ready"
+              description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has been not ready for more than 5 minutes"
+          
+          - alert: NodeNotReady
+            expr: kube_node_status_condition{condition="Ready",status="false"} == 1
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node is not ready"
+              description: "Node {{ $labels.node }} has been not ready for more than 2 minutes"
+          
+          - alert: DatabaseConnectionFailed
+            expr: health_check_status{name="database-connectivity"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Database connection failed"
+              description: "Database connectivity check failed for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+          
+          - alert: CacheConnectionFailed
+            expr: health_check_status{name="cache-connectivity"} == 0
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Cache connection failed"
+              description: "Cache connectivity check failed for service {{ $labels.service }} in namespace {{ $labels.namespace }}"
+      grafana-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Health Check Dashboard",
+            "tags": ["health", "monitoring", "status"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Namespace",
+                  "multi": true,
+                  "name": "namespace",
+                  "options": [],
+                  "query": "label_values(health_check_status, namespace)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                },
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Service",
+                  "multi": true,
+                  "name": "service",
+                  "options": [],
+                  "query": "label_values(health_check_status{namespace=~\"$namespace\"}, service)",
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 0,
+                  "tagValuesQuery": "",
+                  "tagsQuery": "",
+                  "type": "query",
+                  "useTags": false
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Overall Health Status",
+                "type": "row"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "UNHEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "HEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 1
+                },
+                "id": 4,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "health_check_status{namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "{{service}}",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Service Health Status",
+                "type": "stat"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 1
+                },
+                "hiddenSeries": false,
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "health_check_duration_seconds{namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "{{service}} - {{name}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Health Check Duration",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "s",
+                    "label": "Duration",
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 9
+                },
+                "id": 8,
+                "panels": [],
+                "title": "Component Health",
+                "type": "row"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "UNHEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "HEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 6,
+                  "x": 0,
+                  "y": 10
+                },
+                "id": 10,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "health_check_status{name=\"database-connectivity\", namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "Database",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Database Health",
+                "type": "stat"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "UNHEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "HEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 6,
+                  "x": 6,
+                  "y": 10
+                },
+                "id": 12,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "health_check_status{name=\"cache-connectivity\", namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "Cache",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Cache Health",
+                "type": "stat"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "UNHEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "HEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 6,
+                  "x": 12,
+                  "y": 10
+                },
+                "id": 14,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "health_check_status{name=\"message-queue\", namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "Message Queue",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Message Queue Health",
+                "type": "stat"
+              },
+              {
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "color": {
+                      "mode": "thresholds"
+                    },
+                    "custom": {},
+                    "mappings": [
+                      {
+                        "from": "",
+                        "id": 1,
+                        "operator": "",
+                        "text": "UNHEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "0"
+                      },
+                      {
+                        "from": "",
+                        "id": 2,
+                        "operator": "",
+                        "text": "HEALTHY",
+                        "to": "",
+                        "type": 1,
+                        "value": "1"
+                      }
+                    ],
+                    "thresholds": {
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  },
+                  "overrides": []
+                },
+                "gridPos": {
+                  "h": 8,
+                  "w": 6,
+                  "x": 18,
+                  "y": 10
+                },
+                "id": 16,
+                "options": {
+                  "colorMode": "value",
+                  "graphMode": "area",
+                  "justifyMode": "auto",
+                  "orientation": "auto",
+                  "reduceOptions": {
+                    "calcs": ["lastNotNull"],
+                    "fields": "",
+                    "values": false
+                  },
+                  "text": {},
+                  "textMode": "auto"
+                },
+                "pluginVersion": "7.4.3",
+                "targets": [
+                  {
+                    "expr": "health_check_status{name=\"external-api\", namespace=~\"$namespace\", service=~\"$service\"}",
+                    "interval": "",
+                    "legendFormat": "External API",
+                    "refId": "A"
+                  }
+                ],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "External API Health",
+                "type": "stat"
+              },
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 18
+                },
+                "id": 18,
+                "panels": [],
+                "title": "Pod and Node Health",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 0,
+                  "y": 19
+                },
+                "hiddenSeries": false,
+                "id": 20,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "kube_pod_status_ready{namespace=~\"$namespace\", pod=~\"$service.*\"}",
+                    "interval": "",
+                    "legendFormat": "{{pod}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Pod Readiness",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "short",
+                    "label": "Ready Status",
+                    "logBase": 1,
+                    "max": "1",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {},
+                    "links": []
+                  },
+                  "overrides": []
+                },
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 12,
+                  "x": 12,
+                  "y": 19
+                },
+                "hiddenSeries": false,
+                "id": 22,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "alertThreshold": true
+                },
+                "percentage": false,
+                "pluginVersion": "7.4.3",
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "kube_node_status_condition{condition=\"Ready\", namespace=~\"$namespace\"}",
+                    "interval": "",
+                    "legendFormat": "{{node}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeRegions": [],
+                "timeShift": null,
+                "title": "Node Readiness",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "short",
+                    "label": "Ready Status",
+                    "logBase": 1,
+                    "max": "1",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 27,
+            "style": "dark",
+            "tags": ["health", "monitoring", "status"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Health Check Dashboard",
+            "uid": "health-check-dashboard",
+            "version": 1
+          }
+        }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: health-check-sa
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: health-check-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "services", "endpoints", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["prometheuses", "alertmanagers", "servicemonitors"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: health-check-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: health-check-sa
+  namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: health-check-role
+  apiGroup: rbac.authorization.k8s.io

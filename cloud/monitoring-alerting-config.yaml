@@ -1,0 +1,940 @@
+# Cloud-Specific Monitoring and Alerting Configuration
+# Configuration for monitoring and alerting specific to each cloud provider
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-monitoring-config
+  namespace: todo-app
+data:
+  # Azure monitoring configuration
+  azure-monitoring.yaml: |
+    # Azure Monitor and Application Insights configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: azure-monitoring-config
+      namespace: monitoring
+    data:
+      azmon-values.yaml: |
+        # Azure Monitor Helm Chart Values
+        fullnameOverride: azmon-containers-release
+        rbac:
+          # Specifies whether RBAC resources are to be created
+          create: true
+        serviceAccount:
+          # Specifies whether a service account should be created
+          create: true
+          # The name of the service account to use.
+          # If not set and create is true, a name is generated using the fullname template
+          name:
+          annotations:
+            # RBAC for Azure Monitor
+            rbac.authorization.kubernetes.io/autoupdate: "true"
+        config:
+          # Workspace configuration for Log Analytics
+          workspaceDomain: "opinsights.azure.com"
+          # If log analytics workspace is in sovereign cloud, then workspace domain should be updated accordingly
+          # For example, for China sovereign cloud log analytics workspace domain is "opinsights.azure.cn"
+          # workspaceDomain: "opinsights.azure.cn"
+          # For example, for Germany sovereign cloud log analytics workspace domain is "opinsights.azure.de"
+          # workspaceDomain: "opinsights.azure.de"
+          # For example, for US Government cloud log analytics workspace domain is "opinsights.azure.us"
+          # workspaceDomain: "opinsights.azure.us"
+          logAnalytics:
+            # workspaceId: "00000000-0000-0000-0000-000000000000"
+            # workspaceKey: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          # If you are not using federal marketplace, then keep this as false
+          # If you are using federal marketplace, then set this to true
+          federal: false
+          # Enable container log data collection
+          enabled: true
+          # Enable node log data collection
+          enableNodeLogs: true
+          # Enable container log data collection
+          enableContainerLogs: true
+          # Enable container inventory data collection
+          enableContainerInventory: true
+          # Enable Windows container log data collection
+          enableWindowsEvents: false
+          # Enable prometheus scraping
+          enablePrometheus: true
+          # Enable prometheus scraping for windows
+          enableWindowsPrometheus: false
+          # Enable metric data collection
+          enableMetric: true
+          # Enable spot VM node data collection
+          enableSpotVM: false
+          # Enable AKS insights
+          enableAKSInsights: true
+          # Enable Kube State Metrics
+          enableKSM: true
+          # Enable Container Insights Metrics
+          enableContainerInsightsMetrics: true
+          # Enable OSM Metrics
+          enableOSMMetrics: false
+          # Enable Azure Arc extension
+          enableAzureArcExtension: false
+          # Enable Azure Policy addon
+          enableAzurePolicyAddon: false
+          # Enable Azure Defender
+          enableAzureDefender: false
+          # Enable Azure Security Center
+          enableAzureSecurityCenter: true
+          # Enable Azure Security Baseline
+          enableAzureSecurityBaseline: true
+          # Enable Azure Security Benchmark
+          enableAzureSecurityBenchmark: true
+          # Enable Azure Security Center for AKS
+          enableAzureSecurityCenterForAKS: true
+          # Enable Azure Policy for AKS
+          enableAzurePolicyForAKS: true
+          # Enable Azure Monitor for containers
+          enableAzureMonitorForContainers: true
+          # Enable Azure Monitor for VMs
+          enableAzureMonitorForVMs: false
+          # Enable Azure Monitor for VMs Insights
+          enableAzureMonitorForVMsInsights: false
+          # Enable Azure Monitor for VMs Dependency Map
+          enableAzureMonitorForVMsDependencyMap: false
+          # Enable Azure Monitor for VMs Solution
+          enableAzureMonitorForVMsSolution: false
+          # Enable Azure Monitor for VMs Solution Insights
+          enableAzureMonitorForVMsSolutionInsights: false
+          # Enable Azure Monitor for VMs Solution Dependency Map
+          enableAzureMonitorForVMsSolutionDependencyMap: false
+  azure-alerts.yaml: |
+    # Azure Monitor Alert Rules
+    apiVersion: azmon.containerinsights/v1
+    kind: AlertRule
+    metadata:
+      name: azure-alert-rules
+      namespace: monitoring
+    spec:
+      # Alert rules for Azure Monitor
+      rules:
+      - name: "High CPU Usage"
+        description: "Alert when CPU usage is high"
+        severity: 2
+        enabled: true
+        condition:
+          allOf:
+          - metricName: "CpuUsage"
+            operator: "GreaterThan"
+            threshold: 80
+            timeAggregation: "Average"
+            windowDuration: "PT5M"
+            evaluationFrequency: "PT1M"
+          - dimensions:
+            - name: "kubernetesnodename"
+              operator: "Include"
+              values: ["*"]
+        actionGroups:
+        - actionGroupId: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/microsoft.insights/actiongroups/todo-app-alerts"
+      - name: "High Memory Usage"
+        description: "Alert when memory usage is high"
+        severity: 2
+        enabled: true
+        condition:
+          allOf:
+          - metricName: "MemoryUsage"
+            operator: "GreaterThan"
+            threshold: 85
+            timeAggregation: "Average"
+            windowDuration: "PT5M"
+            evaluationFrequency: "PT1M"
+          - dimensions:
+            - name: "kubernetesnodename"
+              operator: "Include"
+              values: ["*"]
+        actionGroups:
+        - actionGroupId: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/microsoft.insights/actiongroups/todo-app-alerts"
+      - name: "Pod Crash Looping"
+        description: "Alert when pods are crash looping"
+        severity: 1
+        enabled: true
+        condition:
+          allOf:
+          - metricName: "PodRestartCount"
+            operator: "GreaterThan"
+            threshold: 5
+            timeAggregation: "Count"
+            windowDuration: "PT10M"
+            evaluationFrequency: "PT1M"
+          - dimensions:
+            - name: "kubernetespodname"
+              operator: "Include"
+              values: ["*"]
+        actionGroups:
+        - actionGroupId: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/microsoft.insights/actiongroups/todo-app-alerts"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-monitoring-config
+  namespace: todo-app
+data:
+  # Google Cloud monitoring configuration
+  gcp-monitoring.yaml: |
+    # Google Cloud Operations Suite (formerly Stackdriver) configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: gcp-monitoring-config
+      namespace: monitoring
+    data:
+      gcp-monitoring-values.yaml: |
+        # Google Cloud Operations Agent Helm Chart Values
+        fullnameOverride: gcp-ops-agent
+        serviceAccount:
+          create: true
+          name: gcp-ops-agent-sa
+        config:
+          # Enable Ops Agent
+          enableOpsAgent: true
+          # Enable metrics collection
+          enableMetrics: true
+          # Enable logs collection
+          enableLogs: true
+          # Enable traces collection
+          enableTraces: true
+          # Enable uptime checks
+          enableUptimeChecks: true
+          # Enable alerting
+          enableAlerting: true
+          # Enable dashboards
+          enableDashboards: true
+          # Enable custom metrics
+          enableCustomMetrics: true
+          # Enable Kubernetes Engine monitoring
+          enableKubernetesEngineMonitoring: true
+          # Enable Managed Service for Prometheus
+          enableManagedServicePrometheus: true
+          # Project ID
+          projectId: "todo-app-project"
+          # Location
+          location: "us-central1"
+          # Cluster name
+          clusterName: "todo-app-gke-cluster"
+          # Configuration for metrics
+          metrics:
+            # Enable system metrics
+            enableSystemMetrics: true
+            # Enable workload metrics
+            enableWorkloadMetrics: true
+            # Enable cluster metrics
+            enableClusterMetrics: true
+            # Enable pod metrics
+            enablePodMetrics: true
+            # Enable container metrics
+            enableContainerMetrics: true
+          # Configuration for logs
+          logs:
+            # Enable system logs
+            enableSystemLogs: true
+            # Enable workload logs
+            enableWorkloadLogs: true
+            # Enable cluster logs
+            enableClusterLogs: true
+            # Enable audit logs
+            enableAuditLogs: true
+          # Configuration for traces
+          traces:
+            # Enable application traces
+            enableApplicationTraces: true
+            # Enable infrastructure traces
+            enableInfrastructureTraces: true
+  gcp-alerts.yaml: |
+    # Google Cloud Alert Policies
+    apiVersion: monitoring.googleapis.com/v1
+    kind: AlertPolicy
+    metadata:
+      name: gcp-alert-policies
+      namespace: monitoring
+    spec:
+      # Alert policies for Google Cloud
+      policies:
+      - displayName: "High CPU Utilization"
+        conditions:
+        - displayName: "CPU Utilization above 80%"
+          conditionThreshold:
+            filter: 'resource.type = "k8s_container" AND metric.type = "kubernetes.io/container/cpu/core_usage_time"'
+            aggregations:
+            - alignmentPeriod: 300s
+              perSeriesAligner: ALIGN_RATE
+            crossSeriesReducer: REDUCE_MEAN
+            groupByFields:
+            - resource.label.container_name
+            - resource.label.namespace_name
+            comparison: COMPARISON_GT
+            thresholdValue: 0.80
+            duration: 60s
+            trigger:
+              count: 1
+        alertStrategy:
+          notificationRateLimit:
+            period: 300s
+          autoClose: 3600s
+        combiner: OR
+        enabled: true
+        notificationChannels:
+        - "projects/todo-app-project/notificationChannels/alert-channel-id"
+      - displayName: "High Memory Utilization"
+        conditions:
+        - displayName: "Memory Utilization above 85%"
+          conditionThreshold:
+            filter: 'resource.type = "k8s_container" AND metric.type = "kubernetes.io/container/memory/used_bytes"'
+            aggregations:
+            - alignmentPeriod: 300s
+              perSeriesAligner: ALIGN_MEAN
+            crossSeriesReducer: REDUCE_MEAN
+            groupByFields:
+            - resource.label.container_name
+            - resource.label.namespace_name
+            comparison: COMPARISON_GT
+            thresholdValue: 0.85
+            duration: 60s
+            trigger:
+              count: 1
+        alertStrategy:
+          notificationRateLimit:
+            period: 300s
+          autoClose: 3600s
+        combiner: OR
+        enabled: true
+        notificationChannels:
+        - "projects/todo-app-project/notificationChannels/alert-channel-id"
+      - displayName: "Pod Crash Looping"
+        conditions:
+        - displayName: "Pod Restart Count above 5 in 10 minutes"
+          conditionThreshold:
+            filter: 'resource.type = "k8s_pod" AND metric.type = "kubernetes.io/pod/uptime"'
+            aggregations:
+            - alignmentPeriod: 600s
+              perSeriesAligner: ALIGN_DELTA
+            crossSeriesReducer: REDUCE_COUNT
+            groupByFields:
+            - resource.label.pod_name
+            - resource.label.namespace_name
+            comparison: COMPARISON_GT
+            thresholdValue: 5
+            duration: 600s
+            trigger:
+              count: 1
+        alertStrategy:
+          notificationRateLimit:
+            period: 300s
+          autoClose: 3600s
+        combiner: OR
+        enabled: true
+        notificationChannels:
+        - "projects/todo-app-project/notificationChannels/alert-channel-id"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-monitoring-config
+  namespace: todo-app
+data:
+  # Oracle Cloud monitoring configuration
+  oci-monitoring.yaml: |
+    # Oracle Cloud Infrastructure Monitoring configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-monitoring-config
+      namespace: monitoring
+    data:
+      oci-monitoring-values.yaml: |
+        # Oracle Management Agent Helm Chart Values
+        fullnameOverride: oci-management-agent
+        serviceAccount:
+          create: true
+          name: oci-management-agent-sa
+        config:
+          # Enable Management Agent
+          enableAgent: true
+          # Enable metrics collection
+          enableMetrics: true
+          # Enable logs collection
+          enableLogs: true
+          # Enable events collection
+          enableEvents: true
+          # Enable alerts
+          enableAlerts: true
+          # Enable dashboards
+          enableDashboards: true
+          # Tenancy OCID
+          tenancyId: "ocid1.tenancy.oc1..aaaaaaa..."
+          # Compartment OCID
+          compartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+          # Region
+          region: "us-phoenix-1"
+          # Cluster OCID
+          clusterId: "ocid1.cluster.oc1.phx.aaaaaaa..."
+          # Configuration for metrics
+          metrics:
+            # Enable system metrics
+            enableSystemMetrics: true
+            # Enable workload metrics
+            enableWorkloadMetrics: true
+            # Enable cluster metrics
+            enableClusterMetrics: true
+            # Enable pod metrics
+            enablePodMetrics: true
+            # Enable container metrics
+            enableContainerMetrics: true
+            # Metric namespaces
+            namespaces:
+            - "oci_kubernetes_cluster"
+            - "oci_compute"
+            - "oci_networking"
+            - "oci_loadbalancer"
+            - "oci_objectstorage"
+          # Configuration for logs
+          logs:
+            # Enable system logs
+            enableSystemLogs: true
+            # Enable workload logs
+            enableWorkloadLogs: true
+            # Enable cluster logs
+            enableClusterLogs: true
+            # Enable audit logs
+            enableAuditLogs: true
+            # Log groups
+            logGroups:
+            - name: "todo-app-cluster-logs"
+              retention: 30
+            - name: "todo-app-node-logs"
+              retention: 30
+            - name: "todo-app-app-logs"
+              retention: 30
+          # Configuration for events
+          events:
+            # Enable cluster events
+            enableClusterEvents: true
+            # Enable node events
+            enableNodeEvents: true
+            # Enable pod events
+            enablePodEvents: true
+            # Event categories
+            categories:
+            - "alarm"
+            - "audit"
+            - "resource"
+  oci-alerts.yaml: |
+    # Oracle Cloud Infrastructure Alert Rules
+    apiVersion: monitoring.oci.oraclecloud.com/v1
+    kind: Alarm
+    metadata:
+      name: oci-alarms
+      namespace: monitoring
+    spec:
+      # Alarm rules for Oracle Cloud Infrastructure
+      alarms:
+      - displayName: "High CPU Utilization"
+        description: "Alarm when CPU utilization is high"
+        metricCompartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+        namespace: "oci_computeagent"
+        query: "CpuUtilization[1m].mean() > 80"
+        severity: "CRITICAL"
+        isEnabled: true
+        messageFormat: "JSON"
+        pendingDuration: "PT1M"
+        repeatNotificationDuration: "PT2H"
+        destinations:
+        - "ocid1.onboarding.notification.topic.oc1.phx.aaaaaaa..."
+      - displayName: "High Memory Utilization"
+        description: "Alarm when memory utilization is high"
+        metricCompartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+        namespace: "oci_computeagent"
+        query: "MemoryUtilization[1m].mean() > 85"
+        severity: "CRITICAL"
+        isEnabled: true
+        messageFormat: "JSON"
+        pendingDuration: "PT1M"
+        repeatNotificationDuration: "PT2H"
+        destinations:
+        - "ocid1.onboarding.notification.topic.oc1.phx.aaaaaaa..."
+      - displayName: "Node Unavailable"
+        description: "Alarm when a node becomes unavailable"
+        metricCompartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+        namespace: "oci_kubernetes_cluster"
+        query: "NodeStatus[1m].filter(status = 'NotReady').count() > 0"
+        severity: "CRITICAL"
+        isEnabled: true
+        messageFormat: "JSON"
+        pendingDuration: "PT5M"
+        repeatNotificationDuration: "PT1H"
+        destinations:
+        - "ocid1.onboarding.notification.topic.oc1.phx.aaaaaaa..."
+      - displayName: "Pod Crash Looping"
+        description: "Alarm when pods are crash looping"
+        metricCompartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+        namespace: "oci_kubernetes_cluster"
+        query: "PodRestartCount[10m].sum() > 5"
+        severity: "WARNING"
+        isEnabled: true
+        messageFormat: "JSON"
+        pendingDuration: "PT1M"
+        repeatNotificationDuration: "PT2H"
+        destinations:
+        - "ocid1.onboarding.notification.topic.oc1.phx.aaaaaaa..."
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-cloud-monitoring-config
+  namespace: todo-app
+data:
+  # Multi-cloud monitoring configuration using Prometheus
+  multi-cloud-prometheus.yaml: |
+    # Prometheus configuration for multi-cloud monitoring
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: multi-cloud-prometheus-config
+      namespace: monitoring
+    data:
+      prometheus.yml: |
+        global:
+          scrape_interval: 15s
+          evaluation_interval: 15s
+        
+        rule_files:
+          - "alert_rules.yml"
+        
+        alerting:
+          alertmanagers:
+            - static_configs:
+                - targets:
+                  - alertmanager:9093
+        
+        scrape_configs:
+          # Scrape configuration for Todo App services
+          - job_name: 'todo-app'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - 'todo-app'
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                action: replace
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+                target_label: __address__
+              - action: labelmap
+                regex: __meta_kubernetes_pod_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: kubernetes_namespace
+              - source_labels: [__meta_kubernetes_pod_name]
+                action: replace
+                target_label: kubernetes_pod_name
+          
+          # Scrape configuration for Dapr services
+          - job_name: 'dapr'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - 'dapr-system'
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                action: replace
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+                target_label: __address__
+              - action: labelmap
+                regex: __meta_kubernetes_pod_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: kubernetes_namespace
+              - source_labels: [__meta_kubernetes_pod_name]
+                action: replace
+                target_label: kubernetes_pod_name
+          
+          # Scrape configuration for cloud provider metrics adapters
+          - job_name: 'azure-metrics-adapter'
+            static_configs:
+              - targets: ['azure-metrics-adapter:8080']
+          
+          - job_name: 'gcp-metrics-adapter'
+            static_configs:
+              - targets: ['gcp-metrics-adapter:8080']
+          
+          - job_name: 'oci-metrics-adapter'
+            static_configs:
+              - targets: ['oci-metrics-adapter:8080']
+  multi-cloud-grafana-dashboards.yaml: |
+    # Grafana dashboard configuration for multi-cloud monitoring
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: multi-cloud-grafana-dashboards
+      namespace: monitoring
+    data:
+      cloud-comparison-dashboard.json: |
+        {
+          "dashboard": {
+            "id": null,
+            "title": "Multi-Cloud Comparison Dashboard",
+            "tags": ["multi-cloud", "comparison"],
+            "style": "dark",
+            "timezone": "browser",
+            "refresh": "5s",
+            "schemaVersion": 16,
+            "version": 0,
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {
+              "refresh_intervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+              "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+            },
+            "templating": {
+              "list": [
+                {
+                  "allValue": null,
+                  "current": {
+                    "selected": false,
+                    "text": "All",
+                    "value": "$__all"
+                  },
+                  "hide": 0,
+                  "includeAll": true,
+                  "label": "Cloud Provider",
+                  "multi": true,
+                  "name": "cloud_provider",
+                  "options": [
+                    {
+                      "selected": true,
+                      "text": "Azure",
+                      "value": "azure"
+                    },
+                    {
+                      "selected": false,
+                      "text": "GCP",
+                      "value": "gcp"
+                    },
+                    {
+                      "selected": false,
+                      "text": "OCI",
+                      "value": "oci"
+                    }
+                  ],
+                  "query": "azure, gcp, oci",
+                  "skipUrlSync": false,
+                  "type": "custom"
+                }
+              ]
+            },
+            "panels": [
+              {
+                "collapsed": false,
+                "gridPos": {
+                  "h": 1,
+                  "w": 24,
+                  "x": 0,
+                  "y": 0
+                },
+                "id": 2,
+                "panels": [],
+                "title": "Cloud Provider Comparison",
+                "type": "row"
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 0,
+                  "y": 1
+                },
+                "id": 4,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "dataLinks": []
+                },
+                "percentage": false,
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "avg by(cloud_provider) (cloud_provider_cpu_utilization{cloud_provider=~\"$cloud_provider\"})",
+                    "instant": false,
+                    "interval": "",
+                    "legendFormat": "{{cloud_provider}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "CPU Utilization by Cloud Provider",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": null,
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 8,
+                  "y": 1
+                },
+                "id": 6,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "dataLinks": []
+                },
+                "percentage": false,
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "avg by(cloud_provider) (cloud_provider_memory_utilization{cloud_provider=~\"$cloud_provider\"})",
+                    "interval": "",
+                    "legendFormat": "{{cloud_provider}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Memory Utilization by Cloud Provider",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "percent",
+                    "label": null,
+                    "logBase": 1,
+                    "max": "100",
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              },
+              {
+                "aliasColors": {},
+                "bars": false,
+                "dashLength": 10,
+                "dashes": false,
+                "datasource": "Prometheus",
+                "fill": 1,
+                "fillGradient": 0,
+                "gridPos": {
+                  "h": 8,
+                  "w": 8,
+                  "x": 16,
+                  "y": 1
+                },
+                "id": 8,
+                "legend": {
+                  "avg": false,
+                  "current": false,
+                  "max": false,
+                  "min": false,
+                  "show": true,
+                  "total": false,
+                  "values": false
+                },
+                "lines": true,
+                "linewidth": 1,
+                "nullPointMode": "null",
+                "options": {
+                  "dataLinks": []
+                },
+                "percentage": false,
+                "pointradius": 2,
+                "points": false,
+                "renderer": "flot",
+                "seriesOverrides": [],
+                "spaceLength": 10,
+                "stack": false,
+                "steppedLine": false,
+                "targets": [
+                  {
+                    "expr": "avg by(cloud_provider) (cloud_provider_network_egress_bytes{cloud_provider=~\"$cloud_provider\"})",
+                    "interval": "",
+                    "legendFormat": "{{cloud_provider}}",
+                    "refId": "A"
+                  }
+                ],
+                "thresholds": [],
+                "timeFrom": null,
+                "timeShift": null,
+                "title": "Network Egress by Cloud Provider",
+                "tooltip": {
+                  "shared": true,
+                  "sort": 0,
+                  "value_type": "individual"
+                },
+                "type": "graph",
+                "xaxis": {
+                  "buckets": null,
+                  "mode": "time",
+                  "name": null,
+                  "show": true,
+                  "values": []
+                },
+                "yaxes": [
+                  {
+                    "format": "Bps",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": "0",
+                    "show": true
+                  },
+                  {
+                    "format": "short",
+                    "label": null,
+                    "logBase": 1,
+                    "max": null,
+                    "min": null,
+                    "show": true
+                  }
+                ],
+                "yaxis": {
+                  "align": false,
+                  "alignLevel": null
+                }
+              }
+            ],
+            "refresh": "5s",
+            "schemaVersion": 22,
+            "style": "dark",
+            "tags": ["multi-cloud", "comparison"],
+            "templating": {
+              "list": []
+            },
+            "time": {
+              "from": "now-15m",
+              "to": "now"
+            },
+            "timepicker": {},
+            "timezone": "",
+            "title": "Multi-Cloud Comparison Dashboard",
+            "uid": "multi-cloud-comparison",
+            "version": 1
+          }
+        }

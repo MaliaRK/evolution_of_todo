@@ -1,0 +1,312 @@
+# Distributed Tracing Configuration
+# Configuration for Jaeger/Zipkin distributed tracing in the Todo AI system
+
+# Jaeger Configuration
+JAEGER:
+  SERVER:
+    COLLECTOR:
+      # Collector settings
+      host_port: "0.0.0.0:14268"
+      grpc_host_port: "0.0.0.0:14250"
+      http_server_host_port: "0.0.0.0:14269"
+      
+      # Queue settings
+      queue_size: 1000
+      num_workers: 50
+      
+      # TLS settings
+      tls_enabled: false  # Enable in production
+      tls_cert_path: "/certs/tls.crt"
+      tls_key_path: "/certs/tls.key"
+    
+    QUERY:
+      # Query service settings
+      host_port: "0.0.0.0:16686"
+      base_path: "/"
+      static_files: "/go/jaeger-ui/"
+      
+      # TLS settings
+      tls_enabled: false  # Enable in production
+      tls_cert_path: "/certs/tls.crt"
+      tls_key_path: "/certs/tls.key"
+    
+    AGENT:
+      # Agent settings
+      host_port: "0.0.0.0:5778"
+      http_server_host_port: "0.0.0.0:5778"
+      
+      # Sampling configuration
+      sampling.strategies-file: "/etc/jaeger/sampling_strategies.json"
+      sampling.refresh-interval: 10s
+
+  STORAGE:
+    # Storage configuration
+    type: "elasticsearch"  # Options: cassandra, elasticsearch, kafka, memory
+    elasticsearch:
+      server_urls: "http://elasticsearch:9200"
+      index_prefix: "jaeger"
+      max_span_age: "72h"
+      num_shards.read: 5
+      num_shards.write: 1
+      num_replicas: 1
+      bulk.size: 5242880  # 5MB
+      bulk.workers: 10
+      bulk.flush_interval: 30s
+      timeout: 15s
+    
+    cassandra:
+      servers: "cassandra:9042"
+      keyspace: "jaeger_v1_datacenter1"
+      max-span-age: "72h"
+    
+    memory:
+      max_traces: 100000
+
+  SAMPLING:
+    # Sampling strategies
+    strategies_file: "/etc/jaeger/sampling_strategies.json"
+    default_strategy:
+      type: "probabilistic"
+      param: 0.001  # Sample 0.1% of traces in production, 100% in development
+    
+    service_strategies:
+      - service: "todo-app"
+        type: "probabilistic"
+        param: 0.01  # Sample 1% of todo-app traces
+        operation_strategies:
+          - operation: "/api/v1/tasks/create"
+            type: "probabilistic"
+            param: 0.1  # Sample 10% of task creation traces
+          - operation: "/api/v1/tasks/delete"
+            type: "probabilistic"
+            param: 0.1  # Sample 10% of task deletion traces
+
+# Zipkin Configuration (Alternative)
+ZIPKIN:
+  SERVER:
+    # Server settings
+    port: 9411
+    host: "0.0.0.0"
+    
+    # Web settings
+    web:
+      basepath: "/"
+      cors:
+        enabled: true
+        allowCredentials: true
+        allowedOrigins: ["*"]
+        allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    
+    # Collector settings
+    collector:
+      port: 9410
+      sampleRate: 0.001  # Sample 0.1% of traces in production
+
+  STORAGE:
+    # Storage configuration
+    type: "elasticsearch"  # Options: mem, cassandra, elasticsearch, mysql
+    elasticsearch:
+      hosts: ["elasticsearch:9200"]
+      index: "zipkin"
+      date_separator: "."
+      index_shards: 5
+      index_replicas: 1
+      username: ""
+      password: ""
+      sniff_nodes: false
+      timeout: 10000
+      max_docs_per_trace: 10000
+      autocomplete_size: 5
+    
+    cassandra:
+      hosts: ["cassandra:9042"]
+      keyspace: "zipkin2"
+      max_connections: 8
+      username: ""
+      password: ""
+    
+    mysql:
+      host: "mysql"
+      port: 3306
+      username: "zipkin"
+      password: "zipkin"
+      db: "zipkin"
+
+# Tracing Client Configuration
+TRACING_CLIENT:
+  # Configuration for application tracing clients
+  jaeger_client:
+    service_name: "todo-app"
+    sampler_type: "const"  # Options: const, probabilistic, ratelimiting, remote
+    sampler_param: 1  # For const sampler, 1 = always sample, 0 = never sample
+    reporter_log_spans: false
+    reporter_buffer_flush_interval: 1s
+    reporter_max_queue_size: 100
+    reporter_attempt_reconnecting_interval: 1s
+    reporter_max_attempts: 10
+    reporter_attempt_reconnecting_timeout: 5s
+    propagation: "jaeger"  # Options: jaeger, b3, uberctx, tracecontext
+    
+    # Agent settings
+    agent_host: "jaeger-agent"
+    agent_port: 6831
+  
+  opentelemetry_client:
+    service_name: "todo-app"
+    collector_endpoint: "http://jaeger-collector:14268/api/traces"
+    insecure: true  # Set to false in production with TLS
+    sampling_ratio: 0.001  # Sample 0.1% of traces
+    headers:
+      "Content-Type": "application/json"
+
+# Trace Data Enrichment
+TRACE_ENRICHMENT:
+  # Additional data to include in traces
+  span_tags:
+    environment: "${ENVIRONMENT}"
+    service_version: "${SERVICE_VERSION}"
+    deployment_id: "${DEPLOYMENT_ID}"
+    instance_id: "${INSTANCE_ID}"
+    region: "${REGION}"
+    availability_zone: "${AVAILABILITY_ZONE}"
+  
+  baggage_restrictions:
+    allow_all: false
+    key_restrictions:
+      - key: "user-id"
+        max_value_length: 256
+      - key: "session-id"
+        max_value_length: 256
+  
+  process_tags:
+    hostname: "${HOSTNAME}"
+    ip: "${HOST_IP}"
+    service: "${SERVICE_NAME}"
+    version: "${SERVICE_VERSION}"
+
+# Trace Filtering and Sampling
+TRACE_FILTERING:
+  # Rules for filtering traces
+  exclude_paths:
+    - "/health"
+    - "/metrics"
+    - "/ready"
+    - "/live"
+  
+  include_paths:
+    - "/api/v1/.*"
+    - "/dapr/.*"
+  
+  sampling_rules:
+    high_priority_operations:
+      - path: "/api/v1/tasks/create"
+        sample_rate: 1.0  # Always sample
+        reason: "Business-critical operation"
+      
+      - path: "/api/v1/tasks/delete"
+        sample_rate: 1.0  # Always sample
+        reason: "Business-critical operation"
+    
+    error_traces:
+      status_codes: [400, 401, 403, 404, 500, 502, 503, 504]
+      sample_rate: 1.0  # Always sample error traces
+      reason: "Error debugging"
+
+# Trace Storage and Retention
+TRACE_STORAGE:
+  # Storage and retention policies
+  retention_periods:
+    development: "24h"
+    staging: "7d"
+    production: "30d"
+  
+  storage_optimization:
+    compression: "gzip"
+    partitioning_strategy: "daily"
+    indexing_strategy:
+      span_id: "not_analyzed"
+      trace_id: "not_analyzed"
+      service_name: "analyzed"
+      operation_name: "analyzed"
+      start_time: "date"
+  
+  archival_strategy:
+    archive_after: "7d"
+    archive_destination: "s3://todo-app-traces-archive/${ENVIRONMENT}/"
+    archive_format: "json"
+    archive_compression: "gzip"
+
+# Trace Analysis and Visualization
+TRACE_ANALYSIS:
+  # Configuration for trace analysis
+  analysis_rules:
+    performance_bottlenecks:
+      threshold: "1000ms"
+      aggregation: "p95"
+      notification: "performance-team"
+    
+    error_correlations:
+      error_rate_threshold: "5%"
+      time_window: "5m"
+      notification: "dev-team"
+    
+    dependency_mapping:
+      update_interval: "1h"
+      visualization_depth: 3  # Show up to 3 levels of dependencies
+  
+  visualization_settings:
+    ui_theme: "dark"
+    default_time_range: "1h"
+    refresh_interval: "30s"
+    max_traces_displayed: 100
+
+# Security and Privacy
+TRACE_SECURITY:
+  # Security configuration for tracing
+  data_classification:
+    public_data: ["method", "url", "status_code"]
+    internal_data: ["service_name", "hostname", "ip_address"]
+    sensitive_data: ["user_id", "session_id", "auth_token", "pii"]
+  
+  data_masking:
+    enabled: true
+    masked_fields: ["user_id", "session_id", "auth_token"]
+    masking_pattern: "***MASKED***"
+  
+  access_control:
+    authentication: "required"
+    authorization: "rbac_based"
+    audit_logging: "enabled"
+  
+  encryption:
+    at_rest: true
+    in_transit: true
+    min_tls_version: "1.2"
+
+# Monitoring and Alerting
+TRACE_MONITORING:
+  # Metrics and monitoring for tracing system
+  health_metrics:
+    - collector_accepting_spans
+    - collector_batches_accepted
+    - collector_spans_accepted
+    - query_requests
+    - storage_writes
+    - storage_reads
+  
+  alerting_rules:
+    collector_down:
+      condition: "collector_accepting_spans == 0"
+      severity: "critical"
+      notification: "immediate"
+    
+    high_error_rate:
+      condition: "error_traces_per_minute > 50"
+      severity: "warning"
+      notification: "dev-team"
+    
+    storage_full:
+      condition: "storage_utilization > 90%"
+      severity: "critical"
+      notification: "ops-team"

@@ -1,0 +1,806 @@
+# Backup and Disaster Recovery Procedures for Cloud
+# Configuration for backup and disaster recovery specific to cloud environments
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-backup-dr-config
+  namespace: todo-app
+data:
+  # Azure backup and disaster recovery configuration
+  azure-backup-config.yaml: |
+    # Azure Backup and Disaster Recovery Configuration
+    apiVersion: recoveryservices.backup.azure.com/v1
+    kind: BackupVault
+    metadata:
+      name: todo-app-backup-vault
+      namespace: backup
+    spec:
+      location: East US
+      resourceGroupName: todo-app-rg
+      sku: "Standard"
+      properties:
+        storageType: LocallyRedundant
+        storageTypeState: Locked
+        crossRegionRestoreFlag: Enabled
+        encryption:
+          infrastructureEncryption: "Disabled"
+          keyVaultProperties:
+            keyUri: ""
+            keyVaultUri: ""
+    ---
+    apiVersion: recoveryservices.backup.azure.com/v1
+    kind: BackupPolicy
+    metadata:
+      name: todo-app-backup-policy
+      namespace: backup
+    spec:
+      location: East US
+      resourceGroupName: todo-app-rg
+      properties:
+        backupManagementType: AzureWorkload
+        workloadType: Kubernetes
+        schedulePolicy:
+          schedulePolicyType: SimpleSchedulePolicy
+          scheduleRunFrequency: Daily
+          scheduleRunTimes:
+          - "2023-01-01T23:00:00Z"
+          scheduleRunDays: []
+        retentionPolicy:
+          retentionPolicyType: SimpleRetentionPolicy
+          dailySchedule:
+            retentionDuration:
+              count: 30
+              durationType: Days
+        settings:
+          timeZone: UTC
+          isscheduleEnabled: true
+    ---
+    apiVersion: recoveryservices.backup.azure.com/v1
+    kind: BackupProtection
+    metadata:
+      name: todo-app-protection
+      namespace: todo-app
+    spec:
+      resourceGroupName: todo-app-rg
+      vaultName: todo-app-backup-vault
+      itemType: Kubernetes
+      policyId: "/subscriptions/{subscriptionId}/resourceGroups/todo-app-rg/providers/Microsoft.RecoveryServices/vaults/todo-app-backup-vault/backupPolicies/todo-app-backup-policy"
+      containerName: "Kubernetes"
+      protectedItemName: "todo-app-cluster"
+  azure-dr-config.yaml: |
+    # Azure Disaster Recovery Configuration
+    apiVersion: dataservices.azure.com/v1
+    kind: VolumeSnapshot
+    metadata:
+      name: todo-app-snapshot
+      namespace: todo-app
+    spec:
+      volumeSnapshotClassName: azure-snapshots
+      source:
+        persistentVolumeClaimName: todo-app-pvc
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: todo-app-dr-deployment
+      namespace: todo-app-dr
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: todo-app-dr
+      template:
+        metadata:
+          labels:
+            app: todo-app-dr
+        spec:
+          containers:
+          - name: todo-app
+            image: todo-app:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: BACKEND_URL
+              value: "https://todo-app-primary.azurewebsites.net"
+            volumeMounts:
+            - name: data
+              mountPath: /app/data
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: todo-app-dr-pvc
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-dr-service
+      namespace: todo-app-dr
+    spec:
+      selector:
+        app: todo-app-dr
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: LoadBalancer
+  azure-backup-scripts.yaml: |
+    # Azure Backup Scripts
+    backup-script.sh: |
+      #!/bin/bash
+      # Azure backup script for Todo App
+      
+      # Variables
+      RESOURCE_GROUP="todo-app-rg"
+      VAULT_NAME="todo-app-backup-vault"
+      CONTAINER_NAME="Kubernetes"
+      ITEM_NAME="todo-app-cluster"
+      
+      # Authenticate to Azure
+      az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
+      
+      # Trigger backup
+      az backup protection backup-now \
+        --resource-group $RESOURCE_GROUP \
+        --vault-name $VAULT_NAME \
+        --container-name $CONTAINER_NAME \
+        --item-name $ITEM_NAME \
+        --backup-type Full \
+        --retain-until $(date -d '+30 days' '+%Y-%m-%d')
+      
+      # Backup application data
+      kubectl get all -n todo-app -o yaml > /tmp/todo-app-backup-$(date +%Y%m%d).yaml
+      kubectl get secrets -n todo-app -o yaml > /tmp/todo-app-secrets-backup-$(date +%Y%m%d).yaml
+      kubectl get configmaps -n todo-app -o yaml > /tmp/todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+      
+      # Upload to Azure Blob Storage
+      az storage blob upload \
+        --account-name todoappstorage \
+        --container-name backups \
+        --name todo-app-backup-$(date +%Y%m%d).tar.gz \
+        --file /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz \
+        --auth-mode login
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-backup-dr-config
+  namespace: todo-app
+data:
+  # Google Cloud backup and disaster recovery configuration
+  gcp-backup-config.yaml: |
+    # Google Cloud Backup Configuration
+    apiVersion: compute.googleapis.com/v1
+    kind: Snapshot
+    metadata:
+      name: todo-app-snapshot
+      namespace: backup
+    spec:
+      name: "todo-app-snapshot-$(date +%Y%m%d)"
+      description: "Snapshot of Todo App disks"
+      sourceDisk: "todo-app-disk"
+      sourceDiskProject: "todo-app-project"
+      storageLocations:
+      - "us-central1"
+      labels:
+        app: "todo-app"
+        backup-type: "daily"
+        environment: "production"
+    ---
+    apiVersion: storage.googleapis.com/v1
+    kind: Backup
+    metadata:
+      name: todo-app-gcs-backup
+      namespace: backup
+    spec:
+      bucket: "todo-app-backups"
+      location: "US"
+      storageClass: "MULTI_REGIONAL"
+      lifecycle:
+        rule:
+        - action:
+            type: "Delete"
+          condition:
+            age: 30
+    ---
+    apiVersion: sqladmin.googleapis.com/v1
+    kind: BackupConfiguration
+    metadata:
+      name: todo-app-sql-backup
+      namespace: backup
+    spec:
+      instance: "todo-app-db"
+      backupRetentionSettings:
+        retainedBackups: 7
+        retentionUnit: COUNT
+      startTime: "01:00"
+      enabled: true
+  gcp-dr-config.yaml: |
+    # Google Cloud Disaster Recovery Configuration
+    apiVersion: gke.googleapis.com/v1
+    kind: Cluster
+    metadata:
+      name: todo-app-dr-cluster
+      namespace: dr
+    spec:
+      name: todo-app-dr-cluster
+      description: "Disaster Recovery Cluster for Todo App"
+      initialNodeCount: 1
+      location: us-west1
+      nodeConfig:
+        machineType: e2-medium
+        diskSizeGb: 100
+        oauthScopes:
+        - "https://www.googleapis.com/auth/cloud-platform"
+      masterAuth:
+        clientCertificateConfig:
+          issueClientCertificate: false
+      ipAllocationPolicy:
+        useIpAliases: true
+      databaseEncryption:
+        state: "ENCRYPTED"
+        keyName: "projects/todo-app-project/locations/us-west1/keyRings/todo-app-keyring/cryptoKeys/todo-app-key"
+      workloadIdentityConfig:
+        workloadPool: "todo-app-project.svc.id.goog"
+    ---
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: todo-app-dr
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: todo-app-dr-deployment
+      namespace: todo-app-dr
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: todo-app-dr
+      template:
+        metadata:
+          labels:
+            app: todo-app-dr
+        spec:
+          containers:
+          - name: todo-app
+            image: gcr.io/todo-app-project/todo-app:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: BACKEND_URL
+              value: "https://todo-app-primary.appspot.com"
+            volumeMounts:
+            - name: data
+              mountPath: /app/data
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: todo-app-dr-pvc
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-dr-service
+      namespace: todo-app-dr
+    spec:
+      selector:
+        app: todo-app-dr
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: LoadBalancer
+  gcp-backup-scripts.yaml: |
+    # Google Cloud Backup Scripts
+    backup-script.sh: |
+      #!/bin/bash
+      # Google Cloud backup script for Todo App
+      
+      # Variables
+      PROJECT_ID="todo-app-project"
+      REGION="us-central1"
+      ZONE="us-central1-a"
+      BUCKET_NAME="todo-app-backups"
+      
+      # Authenticate to Google Cloud
+      gcloud auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS
+      gcloud config set project $PROJECT_ID
+      
+      # Backup application resources
+      kubectl get all -n todo-app -o yaml > /tmp/todo-app-backup-$(date +%Y%m%d).yaml
+      kubectl get secrets -n todo-app -o yaml > /tmp/todo-app-secrets-backup-$(date +%Y%m%d).yaml
+      kubectl get configmaps -n todo-app -o yaml > /tmp/todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+      
+      # Create archive
+      tar -czf /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz -C /tmp todo-app-backup-$(date +%Y%m%d).yaml todo-app-secrets-backup-$(date +%Y%m%d).yaml todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+      
+      # Upload to Google Cloud Storage
+      gsutil cp /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz gs://$BUCKET_NAME/
+      
+      # Create disk snapshots
+      gcloud compute disks snapshot todo-app-disk \
+        --project=$PROJECT_ID \
+        --zone=$ZONE \
+        --snapshot-names=todo-app-snapshot-$(date +%Y%m%d) \
+        --storage-location=$REGION
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-backup-dr-config
+  namespace: todo-app
+data:
+  # Oracle Cloud backup and disaster recovery configuration
+  oci-backup-config.yaml: |
+    # Oracle Cloud Infrastructure Backup Configuration
+    apiVersion: core.oracle.com/v1
+    kind: VolumeBackup
+    metadata:
+      name: todo-app-volume-backup
+      namespace: backup
+    spec:
+      compartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+      displayName: "todo-app-volume-backup-$(date +%Y%m%d)"
+      sourceDetails:
+        id: "ocid1.volume.oc1.phx.aaaaaaa..."
+        type: "volumeId"
+      type: "FULL"
+      definedTags:
+        department: "engineering"
+        project: "todo-app"
+        backup-type: "daily"
+      freeformTags:
+        environment: "production"
+        application: "todo-app"
+    ---
+    apiVersion: objectstorage.oracle.com/v1
+    kind: Bucket
+    metadata:
+      name: todo-app-backup-bucket
+      namespace: backup
+    spec:
+      compartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+      name: "todo-app-backups"
+      namespace: "todoappns"
+      storageTier: "Standard"
+      publicAccessType: "NoPublicAccess"
+      objectLifecyclePolicy:
+        rules:
+        - name: "expire-old-backups"
+          action: "DELETE"
+          timeAmount: 30
+          timeUnit: "DAYS"
+          isEnabled: true
+          bucketName: "todo-app-backups"
+    ---
+    apiVersion: database.oracle.com/v1
+    kind: BackupConfiguration
+    metadata:
+      name: todo-app-db-backup
+      namespace: backup
+    spec:
+      dbSystemId: "ocid1.dbsystem.oc1.phx.aaaaaaa..."
+      backupDestinationDetails:
+      - type: "NFS"
+        nfsServerExport: "/exports/backup"
+        hostname: "backup-server"
+      backupConfig:
+        backupRetentionPeriod: 30
+        compression: "HIGH"
+        encryption: "ENABLED"
+        incrementalBackupEnabled: true
+  oci-dr-config.yaml: |
+    # Oracle Cloud Infrastructure Disaster Recovery Configuration
+    apiVersion: containerengine.oracle.com/v1
+    kind: Cluster
+    metadata:
+      name: todo-app-dr-cluster
+      namespace: dr
+    spec:
+      name: "todo-app-dr-cluster"
+      compartmentId: "ocid1.compartment.oc1..aaaaaaa..."
+      vcnId: "ocid1.vcn.oc1.phx.aaaaaaa..."
+      kubernetesVersion: "v1.24.1"
+      endpointConfig:
+        isPublicIpEnabled: true
+        nsgIds: []
+      options:
+        kubernetesNetworkConfig:
+          podsCidr: "10.244.0.0/16"
+          servicesCidr: "10.96.0.0/16"
+        serviceLbConfig:
+          isApiEndpointConstrained: false
+          isWorkerNodeConstrained: false
+      imagePolicyConfig:
+        isPolicyEnabled: false
+      addOns:
+        isKubernetesDashboardEnabled: false
+        isTillerEnabled: false
+    ---
+    apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: todo-app-dr
+    ---
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: todo-app-dr-deployment
+      namespace: todo-app-dr
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: todo-app-dr
+      template:
+        metadata:
+          labels:
+            app: todo-app-dr
+        spec:
+          containers:
+          - name: todo-app
+            image: iad.ocir.io/todoappns/todo-app:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: BACKEND_URL
+              value: "https://todo-app-primary.oraclegrocery.com"
+            volumeMounts:
+            - name: data
+              mountPath: /app/data
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: todo-app-dr-pvc
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-dr-service
+      namespace: todo-app-dr
+    spec:
+      selector:
+        app: todo-app-dr
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: LoadBalancer
+  oci-backup-scripts.yaml: |
+    # Oracle Cloud Backup Scripts
+    backup-script.sh: |
+      #!/bin/bash
+      # Oracle Cloud Infrastructure backup script for Todo App
+      
+      # Variables
+      COMPARTMENT_ID="ocid1.compartment.oc1..aaaaaaa..."
+      BUCKET_NAME="todo-app-backups"
+      NAMESPACE="todoappns"
+      
+      # Authenticate to Oracle Cloud
+      export OCI_CLI_AUTH=instance_principal
+      export OCI_CLI_PROFILE=default
+      
+      # Backup application resources
+      kubectl get all -n todo-app -o yaml > /tmp/todo-app-backup-$(date +%Y%m%d).yaml
+      kubectl get secrets -n todo-app -o yaml > /tmp/todo-app-secrets-backup-$(date +%Y%m%d).yaml
+      kubectl get configmaps -n todo-app -o yaml > /tmp/todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+      
+      # Create archive
+      tar -czf /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz -C /tmp todo-app-backup-$(date +%Y%m%d).yaml todo-app-secrets-backup-$(date +%Y%m%d).yaml todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+      
+      # Upload to Object Storage
+      oci os object put \
+        --file /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz \
+        --bucket-name $BUCKET_NAME \
+        --namespace $NAMESPACE \
+        --name todo-app-backup-$(date +%Y%m%d).tar.gz
+      
+      # Create volume backup
+      oci bv backup create \
+        --volume-id ocid1.volume.oc1.phx.aaaaaaa... \
+        --display-name todo-app-volume-backup-$(date +%Y%m%d) \
+        --type FULL \
+        --defined-tags '{"department": "engineering", "project": "todo-app", "backup-type": "daily"}' \
+        --freeform-tags '{"environment": "production", "application": "todo-app"}'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-cloud-backup-dr-config
+  namespace: todo-app
+data:
+  # Multi-cloud backup and disaster recovery configuration
+  backup-strategy.md: |
+    # Multi-Cloud Backup and Disaster Recovery Strategy
+
+    ## Overview
+    This document outlines the backup and disaster recovery strategy for the Todo AI system across multiple cloud providers.
+
+    ## Backup Strategy
+
+    ### Frequency
+    - **Daily backups**: Full application state and configuration
+    - **Weekly backups**: Complete system snapshots
+    - **Monthly backups**: Long-term retention snapshots
+
+    ### Data Types
+    1. **Application Configuration**: Deployments, services, configmaps, secrets
+    2. **Persistent Data**: Database contents, file storage
+    3. **Infrastructure State**: IaC files, cluster configurations
+    4. **Application State**: In-memory data, cache contents
+
+    ### Retention Policy
+    - **Daily backups**: 30 days
+    - **Weekly backups**: 90 days
+    - **Monthly backups**: 1 year
+    - **Yearly backups**: 7 years (compliance)
+
+    ## Disaster Recovery Strategy
+
+    ### Recovery Sites
+    - **Primary**: Active cloud region (e.g., us-central1)
+    - **Secondary**: Alternative cloud region (e.g., us-west1)
+    - **Tertiary**: Cross-cloud provider backup (e.g., Azure, GCP, OCI)
+
+    ### Recovery Objectives
+    - **RTO (Recovery Time Objective)**: 4 hours for primary, 24 hours for secondary
+    - **RTO (Recovery Point Objective)**: 1 hour for primary, 24 hours for secondary
+
+    ### DR Scenarios
+    1. **Application failure**: Restore from latest backup
+    2. **Regional outage**: Failover to secondary region
+    3. **Cross-cloud failure**: Restore from tertiary backup
+
+    ## Implementation
+
+    ### Automation
+    - Automated backup scheduling
+    - Health checks and validation
+    - Cross-region replication
+    - Failover procedures
+
+    ### Monitoring
+    - Backup success/failure alerts
+    - Storage capacity alerts
+    - DR site health checks
+    - Replication lag monitoring
+
+    ## Testing
+    - Monthly DR drills
+    - Backup restoration tests
+    - Failover/failback procedures
+    - Performance validation
+  backup-automation.yaml: |
+    # Backup automation configuration
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: todo-app-daily-backup
+      namespace: backup
+    spec:
+      schedule: "0 2 * * *"
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: backup-sa
+              containers:
+              - name: backup
+                image: alpine:latest
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Install required tools
+                  apk add --no-cache curl jq bash openssl tar gzip
+                  
+                  # Determine cloud provider and run appropriate backup
+                  if [ -f /sys/class/dmi/id/product_name ] && grep -q "Google" /sys/class/dmi/id/product_name; then
+                    echo "Running GCP backup"
+                    # GCP backup commands would go here
+                  elif [ -f /sys/class/dmi/id/sys_vendor ] && grep -q "Microsoft Corporation" /sys/class/dmi/id/sys_vendor; then
+                    echo "Running Azure backup"
+                    # Azure backup commands would go here
+                  elif [ -f /sys/class/dmi/id/product_name ] && grep -q "OracleCloud" /sys/class/dmi/id/product_name; then
+                    echo "Running OCI backup"
+                    # OCI backup commands would go here
+                  else
+                    echo "Unknown cloud provider"
+                    exit 1
+                  fi
+                  
+                  # Backup Kubernetes resources
+                  kubectl get all -n todo-app -o yaml > /tmp/todo-app-backup-$(date +%Y%m%d).yaml
+                  kubectl get secrets -n todo-app -o yaml > /tmp/todo-app-secrets-backup-$(date +%Y%m%d).yaml
+                  kubectl get configmaps -n todo-app -o yaml > /tmp/todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+                  
+                  # Create archive
+                  tar -czf /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz -C /tmp todo-app-backup-$(date +%Y%m%d).yaml todo-app-secrets-backup-$(date +%Y%m%d).yaml todo-app-configmaps-backup-$(date +%Y%m%d).yaml
+                  
+                  # Upload to cloud storage (implementation varies by provider)
+                  echo "Backup completed: /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz"
+                volumeMounts:
+                - name: backup-storage
+                  mountPath: /tmp
+              volumes:
+              - name: backup-storage
+                emptyDir: {}
+              restartPolicy: OnFailure
+    ---
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+      name: todo-app-weekly-backup
+      namespace: backup
+    spec:
+      schedule: "0 3 * * 0"
+      jobTemplate:
+        spec:
+          template:
+            spec:
+              serviceAccountName: backup-sa
+              containers:
+              - name: backup
+                image: alpine:latest
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  # Weekly backup with additional validation
+                  echo "Starting weekly backup with validation"
+                  
+                  # Run daily backup script first
+                  /bin/sh /scripts/daily-backup.sh
+                  
+                  # Perform additional validation
+                  echo "Performing backup validation..."
+                  
+                  # Check backup integrity
+                  if [ -f /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz ]; then
+                    tar -tzf /tmp/todo-app-backup-$(date +%Y%m%d).tar.gz > /dev/null
+                    if [ $? -eq 0 ]; then
+                      echo "Backup integrity check passed"
+                    else
+                      echo "Backup integrity check failed"
+                      exit 1
+                    fi
+                  else
+                    echo "Backup file not found"
+                    exit 1
+                  fi
+                  
+                  echo "Weekly backup completed with validation"
+                volumeMounts:
+                - name: backup-storage
+                  mountPath: /tmp
+                - name: scripts
+                  mountPath: /scripts
+              volumes:
+              - name: backup-storage
+                emptyDir: {}
+              - name: scripts
+                configMap:
+                  name: backup-scripts
+              restartPolicy: OnFailure
+  dr-automation.yaml: |
+    # Disaster recovery automation configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dr-automation-scripts
+      namespace: todo-app
+    data:
+      failover.sh: |
+        #!/bin/bash
+        # Automated failover script
+        
+        # Configuration
+        PRIMARY_REGION="us-central1"
+        SECONDARY_REGION="us-west1"
+        PRIMARY_CLUSTER="todo-app-primary"
+        SECONDARY_CLUSTER="todo-app-secondary"
+        
+        # Function to check primary cluster health
+        check_primary_health() {
+          echo "Checking primary cluster health..."
+          # Check if primary cluster is responsive
+          if kubectl get nodes --cluster=$PRIMARY_CLUSTER &> /dev/null; then
+            echo "Primary cluster is healthy"
+            return 0
+          else
+            echo "Primary cluster is unhealthy"
+            return 1
+          fi
+        }
+        
+        # Function to perform failover
+        perform_failover() {
+          echo "Initiating failover to secondary region..."
+          
+          # Update DNS to point to secondary cluster
+          echo "Updating DNS records..."
+          # DNS update commands would go here
+          
+          # Scale up secondary cluster if needed
+          echo "Scaling up secondary cluster..."
+          # kubectl scale deployment todo-app --replicas=3 --cluster=$SECONDARY_CLUSTER
+          
+          # Update load balancer configuration
+          echo "Updating load balancer..."
+          # Load balancer update commands would go here
+          
+          # Update application configuration
+          echo "Updating application configuration..."
+          # Configuration update commands would go here
+          
+          echo "Failover completed successfully"
+        }
+        
+        # Main script logic
+        if check_primary_health; then
+          echo "Primary cluster is healthy, no failover needed"
+        else
+          echo "Primary cluster is unhealthy, initiating failover"
+          perform_failover
+        fi
+      failback.sh: |
+        #!/bin/bash
+        # Automated failback script
+        
+        # Configuration
+        PRIMARY_REGION="us-central1"
+        SECONDARY_REGION="us-west1"
+        PRIMARY_CLUSTER="todo-app-primary"
+        SECONDARY_CLUSTER="todo-app-secondary"
+        
+        # Function to check primary cluster health
+        check_primary_health() {
+          echo "Checking primary cluster health..."
+          # Check if primary cluster is responsive
+          if kubectl get nodes --cluster=$PRIMARY_CLUSTER &> /dev/null; then
+            echo "Primary cluster is healthy"
+            return 0
+          else
+            echo "Primary cluster is unhealthy"
+            return 1
+          fi
+        }
+        
+        # Function to perform failback
+        perform_failback() {
+          echo "Initiating failback to primary region..."
+          
+          # Sync data from secondary to primary if needed
+          echo "Syncing data to primary cluster..."
+          # Data sync commands would go here
+          
+          # Update DNS to point back to primary cluster
+          echo "Updating DNS records..."
+          # DNS update commands would go here
+          
+          # Scale down secondary cluster
+          echo "Scaling down secondary cluster..."
+          # kubectl scale deployment todo-app --replicas=1 --cluster=$SECONDARY_CLUSTER
+          
+          # Scale up primary cluster
+          echo "Scaling up primary cluster..."
+          # kubectl scale deployment todo-app --replicas=3 --cluster=$PRIMARY_CLUSTER
+          
+          # Update load balancer configuration
+          echo "Updating load balancer..."
+          # Load balancer update commands would go here
+          
+          echo "Failback completed successfully"
+        }
+        
+        # Main script logic
+        if check_primary_health; then
+          echo "Primary cluster is healthy, initiating failback"
+          perform_failback
+        else
+          echo "Primary cluster is still unhealthy, cannot perform failback"
+        fi

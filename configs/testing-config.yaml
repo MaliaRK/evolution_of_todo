@@ -1,0 +1,201 @@
+# Automated Testing Configuration
+# Configuration for automated testing stages in the CI/CD pipeline
+
+# Test Categories
+TEST_CATEGORIES:
+  UNIT_TESTS:
+    # Unit tests for individual components
+    enabled: true
+    runner: pytest
+    path: tests/unit/
+    timeout: 300  # seconds
+    coverage_threshold: 80  # percent
+    parallel_execution: true
+    max_workers: 4
+  
+  INTEGRATION_TESTS:
+    # Tests for component interactions
+    enabled: true
+    runner: pytest
+    path: tests/integration/
+    timeout: 600  # seconds
+    requires_services: ["kafka", "dapr", "database"]
+    parallel_execution: false  # Often require sequential execution
+  
+  E2E_TESTS:
+    # End-to-end tests for complete workflows
+    enabled: true
+    runner: pytest
+    path: tests/e2e/
+    timeout: 1200  # seconds
+    requires_environment: staging
+    parallel_execution: false
+  
+  PERFORMANCE_TESTS:
+    # Performance and load tests
+    enabled: false  # Enable in specific performance testing pipeline
+    runner: locust
+    path: tests/performance/
+    timeout: 1800  # seconds
+    target_rps: 100  # requests per second
+    max_response_time: 500  # milliseconds
+  
+  SECURITY_TESTS:
+    # Security-focused tests
+    enabled: true
+    runner: pytest
+    path: tests/security/
+    timeout: 600  # seconds
+    requires_vulnerability_scan: true
+
+# Test Infrastructure
+TEST_INFRASTRUCTURE:
+  # Containerized test environment
+  container_based:
+    enabled: true
+    base_image: python:3.11-slim
+    resources:
+      cpu: "1"
+      memory: "1Gi"
+  
+  # Test data management
+  test_data:
+    fixtures_path: tests/fixtures/
+    cleanup_after_test: true
+    data_isolation: true
+  
+  # Mock services for testing
+  mocks:
+    kafka_mock: true
+    dapr_mock: true
+    external_api_mocks: true
+
+# Test Execution Strategy
+EXECUTION_STRATEGY:
+  # Run tests in parallel when possible
+  parallel_execution: true
+  max_parallel_jobs: 4
+  
+  # Test selection
+  selective_testing:
+    enabled: true
+    based_on_changes: true
+    affected_components_only: true
+  
+  # Retry failed tests
+  retry_failed_tests:
+    enabled: true
+    max_attempts: 2
+    backoff_factor: 2
+  
+  # Flaky test handling
+  flaky_test_detection:
+    enabled: true
+    detection_method: statistical
+    quarantine_flaky_tests: true
+
+# Test Reporting
+REPORTING:
+  # Report format
+  formats:
+    - junit_xml
+    - html
+    - json
+    - sarif  # For integration with GitHub
+  
+  # Coverage reporting
+  coverage:
+    enabled: true
+    format: cobertura
+    minimum_coverage: 80
+    upload_to_codecov: true
+    upload_token: ${CODECOV_TOKEN}
+  
+  # Performance metrics
+  performance_metrics:
+    enabled: true
+    metrics:
+      - execution_time
+      - memory_usage
+      - cpu_usage
+      - response_time_percentiles
+  
+  # Test result aggregation
+  aggregation:
+    enabled: true
+    destination: test-results-aggregator.todo-app.com
+    retention_days: 90
+
+# Quality Gates
+QUALITY_GATES:
+  # Unit test requirements
+  unit_tests:
+    min_pass_rate: 95
+    max_flaky_rate: 5
+    coverage_threshold: 80
+  
+  # Integration test requirements
+  integration_tests:
+    min_pass_rate: 90
+    max_flaky_rate: 10
+    coverage_threshold: 70
+  
+  # Overall requirements
+  overall:
+    min_pass_rate: 90
+    max_flaky_rate: 5
+    security_scan_passed: true
+    performance_requirements_met: true
+
+# Test Environment Management
+ENVIRONMENT_MANAGEMENT:
+  # Temporary test environments
+  ephemeral_environments:
+    create_for_pr: true
+    ttl_hours: 24
+    auto_cleanup: true
+  
+  # Shared test environments
+  shared_environments:
+    staging_like: true
+    refresh_schedule: daily
+    data_reset: true
+  
+  # Service virtualization
+  service_virtualization:
+    enabled: true
+    mock_external_services: true
+    record_playback_mode: true
+
+# Notifications
+NOTIFICATIONS:
+  # Test result notifications
+  on_completion:
+    always: false
+    on_failure: true
+    on_first_success_after_failure: true
+  
+  # Recipients
+  recipients:
+    - dev-team@todo-app.com
+    - qa-team@todo-app.com
+  
+  # Channels
+  channels:
+    - email
+    - slack
+    - github_status_checks
+
+# Maintenance
+MAINTENANCE:
+  # Test maintenance tasks
+  scheduled_tasks:
+    test_health_check: weekly
+    unused_test_detection: monthly
+    test_dependency_update: monthly
+  
+  # Test data maintenance
+  data_maintenance:
+    cleanup_frequency: daily
+    backup_retention: 7 days
+    anonymization_required: true

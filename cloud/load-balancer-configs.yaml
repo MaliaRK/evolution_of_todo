@@ -1,0 +1,453 @@
+# Cloud Provider Load Balancer Configurations
+# Configuration for load balancers specific to each cloud provider
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-load-balancer-config
+  namespace: todo-app
+data:
+  # Azure Load Balancer Configuration
+  azure-lb-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-azure-lb
+      namespace: todo-app
+      annotations:
+        # Azure Load Balancer specific annotations
+        service.beta.kubernetes.io/azure-load-balancer-resource-group: todo-app-rg
+        service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+        service.beta.kubernetes.io/azure-load-balancer-tcp-idle-timeout: "30"
+        service.beta.kubernetes.io/azure-dns-label-name: todo-app-aks
+        service.beta.kubernetes.io/azure-rtm: "true"
+        service.beta.kubernetes.io/azure-attributions: "todo-app"
+        service.beta.kubernetes.io/azure-enable-high-availability-port: "false"
+        service.beta.kubernetes.io/azure-enable-internal-load-balancer: "false"
+        service.beta.kubernetes.io/azure-load-balancer-mode: "user"
+        service.beta.kubernetes.io/azure-pip-dns-name-resource-id: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/Microsoft.Network/publicIPAddresses/todo-app-ip"
+    spec:
+      type: LoadBalancer
+      allocateLoadBalancerNodePorts: true
+      externalTrafficPolicy: Cluster
+      healthCheckNodePort: 31989
+      ipFamilies:
+      - IPv4
+      ipFamilyPolicy: SingleStack
+      ports:
+      - name: http
+        port: 80
+        protocol: TCP
+        targetPort: 8080
+        appProtocol: http
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 8443
+        appProtocol: https
+      selector:
+        app: todo-app
+      sessionAffinity: None
+  azure-application-gateway-config.yaml: |
+    # Azure Application Gateway Ingress Controller Configuration
+    apiVersion: appgw.ingress.k8s.io/v1
+    kind: AzureIngressManagedApplicationGateway
+    metadata:
+      name: todo-app-application-gateway
+      namespace: todo-app
+    spec:
+      gatewayName: todo-app-agw
+      resourceGroup: todo-app-rg
+      location: East US
+      sku:
+        name: WAF_v2
+        tier: WAF_v2
+      capacity: 2
+      subnetCidr: "10.240.0.0/16"
+      zones:
+      - "1"
+      - "2"
+      - "3"
+      firewallPolicy:
+        name: todo-app-waf-policy
+        location: East US
+        enabled: true
+        mode: Prevention
+        ruleSets:
+        - type: Microsoft_BotManagerRuleSet
+          version: "0.1"
+        - type: Microsoft_OWASP3.1_20210906
+          version: "1.0"
+        customRules:
+        - name: "CustomRule1"
+          priority: 1
+          ruleType: MatchRule
+          action: Block
+         matchConditions:
+          - matchVariables:
+            - variableName: RemoteAddr
+            matchConditions:
+            - operator: IPMatch
+              negationCondition: false
+              matchValues:
+              - "192.168.1.0/24"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-load-balancer-config
+  namespace: todo-app
+data:
+  # Google Cloud Load Balancer Configuration
+  gcp-lb-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-gcp-lb
+      namespace: todo-app
+      annotations:
+        # Google Cloud Load Balancer specific annotations
+        cloud.google.com/load-balancer-type: "External"
+        networking.gke.io/load-balancer-type: "External"
+        beta.cloud.google.com/backend-config: '{"ports": {"80":"todo-app-backend-config"}}'
+        cloud.google.com/neg: '{"exposed_ports":{"80":{}, "443":{}}}'
+        cloud.google.com/app-protocols: '{"http":"HTTP","https":"HTTPS"}'
+    spec:
+      type: LoadBalancer
+      allocateLoadBalancerNodePorts: true
+      externalTrafficPolicy: Cluster
+      healthCheckNodePort: 31989
+      ipFamilies:
+      - IPv4
+      ipFamilyPolicy: SingleStack
+      ports:
+      - name: http
+        port: 80
+        protocol: TCP
+        targetPort: 8080
+        appProtocol: http
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 8443
+        appProtocol: https
+      selector:
+        app: todo-app
+      sessionAffinity: None
+  gcp-backend-config.yaml: |
+    # Google Cloud Backend Config
+    apiVersion: cloud.google.com/v1
+    kind: BackendConfig
+    metadata:
+      name: todo-app-backend-config
+      namespace: todo-app
+    spec:
+      healthCheck:
+        checkIntervalSec: 30
+        timeoutSec: 5
+        healthyThreshold: 1
+        unhealthyThreshold: 3
+        type: HTTP
+        requestPath: /healthz
+        port: 8080
+      securityPolicy:
+        name: todo-app-security-policy
+      sessionAffinity:
+        affinityType: CLIENT_IP
+        affinityCookieTtlSec: 600
+      connectionDraining:
+        drainingTimeoutSec: 600
+      customRequestHeaders:
+        headers:
+        - "X-Client-Region:{region}"
+        - "X-Client-Zone:{zone}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-load-balancer-config
+  namespace: todo-app
+data:
+  # Oracle Cloud Load Balancer Configuration
+  oci-lb-service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: todo-app-oci-lb
+      namespace: todo-app
+      annotations:
+        # Oracle Cloud Load Balancer specific annotations
+        service.beta.kubernetes.io/oci-load-balancer-internal: "false"
+        service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+        service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "100"
+        service.beta.kubernetes.io/oci-load-balancer-security-list-management-mode: "Oracle-managed"
+        service.beta.kubernetes.io/oci-load-balancer-subnet1: "ocid1.subnet.oc1.phx.aaaaaaa..."
+        service.beta.kubernetes.io/oci-load-balancer-subnet2: "ocid1.subnet.oc1.phx.aaaaaaa..."
+        service.beta.kubernetes.io/oci-load-balancer-network-security-groups: "ocid1.networksecuritygroup.oc1.phx.aaaaaaa..."
+        service.beta.kubernetes.io/oci-load-balancer-protocol: "TCP"
+        service.beta.kubernetes.io/oci-load-balancer-backend-protocol: "HTTP"
+        service.beta.kubernetes.io/oci-load-balancer-ssl-ports: "443"
+        service.beta.kubernetes.io/oci-load-balancer-certificate-id: "ocid1.certificate.oc1.phx.aaaaaaa..."
+    spec:
+      type: LoadBalancer
+      allocateLoadBalancerNodePorts: true
+      externalTrafficPolicy: Cluster
+      healthCheckNodePort: 31989
+      ipFamilies:
+      - IPv4
+      ipFamilyPolicy: SingleStack
+      ports:
+      - name: http
+        port: 80
+        protocol: TCP
+        targetPort: 8080
+        appProtocol: http
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 8443
+        appProtocol: https
+      selector:
+        app: todo-app
+      sessionAffinity: None
+  oci-backend-set-config.yaml: |
+    # Oracle Cloud Backend Set Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: oci-backend-set-config
+      namespace: todo-app
+    data:
+      # Configuration for OCI backend sets
+      backend-set-config.json: |
+        {
+          "healthChecker": {
+            "protocol": "HTTP",
+            "urlPath": "/healthz",
+            "returnCode": 200,
+            "delayInSeconds": 30,
+            "timeoutInSeconds": 3,
+            "retries": 3
+          },
+          "policy": "ROUND_ROBIN",
+          "isPreserveSource": false,
+          "connectionConfiguration": {
+            "idleTimeout": 1200,
+            "backendTcpProxyProtocolVersion": null
+          },
+          "sessionPersistenceConfiguration": {
+            "cookieName": "todo-app-session"
+          }
+        }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-cloud-ingress-config
+  namespace: todo-app
+data:
+  # Multi-cloud compatible ingress configuration
+  multi-cloud-ingress.yaml: |
+    # Ingress configuration that works across cloud providers
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: todo-app-multi-cloud-ingress
+      namespace: todo-app
+      annotations:
+        # Generic annotations that work across clouds
+        kubernetes.io/ingress.class: "nginx"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+        nginx.ingress.kubernetes.io/rate-limit-requests-per-second: "5"
+        cert-manager.io/cluster-issuer: "letsencrypt-prod"
+        external-dns.alpha.kubernetes.io/hostname: "todo-app.example.com"
+        external-dns.alpha.kubernetes.io/ttl: "60"
+        
+        # Cloud-specific annotations (commented out, uncomment as needed)
+        # Azure: service.beta.kubernetes.io/azure-load-balancer-resource-group: todo-app-rg
+        # GCP: cloud.google.com/load-balancer-type: "External"
+        # OCI: service.beta.kubernetes.io/oci-load-balancer-shape: "flexible"
+    spec:
+      tls:
+      - hosts:
+        - todo-app.example.com
+        secretName: todo-app-tls
+      rules:
+      - host: todo-app.example.com
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-service
+                port:
+                  number: 80
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: todo-app-api-service
+                port:
+                  number: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: load-balancer-monitoring-config
+  namespace: todo-app
+data:
+  # Load balancer monitoring configuration
+  lb-monitoring-config.yaml: |
+    # Configuration for monitoring load balancers across cloud providers
+    azure:
+      enabled: true
+      monitoring:
+        metrics:
+          - name: "LoadBalancerTotalConnCount"
+            aggregation: "Average"
+            threshold: 1000
+          - name: "LoadBalancerPktCount"
+            aggregation: "Average"
+            threshold: 10000
+          - name: "LoadBalancerByteCount"
+            aggregation: "Average"
+            threshold: 1000000
+        alerts:
+          highConnectionCount:
+            metric: "LoadBalancerTotalConnCount"
+            threshold: 5000
+            timeWindow: "PT5M"
+            aggregation: "Average"
+            actionGroup: "/subscriptions/<subscription-id>/resourceGroups/todo-app-rg/providers/microsoft.insights/actionGroups/todo-app-alerts"
+    gcp:
+      enabled: true
+      monitoring:
+        metrics:
+          - name: "loadbalancing.googleapis.com/https/request_count"
+            aggregation: "ALIGN_RATE"
+            threshold: 1000
+          - name: "loadbalancing.googleapis.com/https/latencies"
+            aggregation: "ALIGN_PERCENTILE_95"
+            threshold: 1000
+          - name: "loadbalancing.googleapis.com/https/backend_latencies"
+            aggregation: "ALIGN_PERCENTILE_95"
+            threshold: 500
+        alerts:
+          highLatency:
+            metric: "loadbalancing.googleapis.com/https/latencies"
+            threshold: 2000
+            duration: "300s"
+            comparison: "COMPARISON_GT"
+    oci:
+      enabled: true
+      monitoring:
+        metrics:
+          - name: "oci_lbaas/load_balancer/connection_count"
+            threshold: 1000
+          - name: "oci_lbaas/load_balancer/throughput"
+            threshold: 1000000
+          - name: "oci_lbaas/load_balancer/healthy_backend_count"
+            threshold: 1
+        alerts:
+          lowHealthyBackends:
+            metric: "oci_lbaas/load_balancer/healthy_backend_count"
+            threshold: 1
+            duration: "300"
+            comparator: "LessThan"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: load-balancer-security-config
+  namespace: todo-app
+data:
+  # Load balancer security configuration
+  lb-security-config.yaml: |
+    # Security configuration for load balancers across cloud providers
+    azure:
+      enabled: true
+      security:
+        applicationGateway:
+          enabled: true
+          firewallPolicy:
+            name: "todo-app-waf-policy"
+            mode: "Prevention"
+            ruleSets:
+            - type: "Microsoft_OWASP3.1_20210906"
+              version: "1.0"
+            customRules:
+            - name: "BlockIP"
+              priority: 100
+              ruleType: "MatchRule"
+              action: "Block"
+             matchConditions:
+              - matchVariables:
+                - variableName: "RemoteAddr"
+                matchConditions:
+                - operator: "IPMatch"
+                  matchValues:
+                  - "192.168.1.0/24"
+        networkSecurityGroups:
+          enabled: true
+          rules:
+          - name: "AllowHTTP"
+            priority: 1000
+            direction: "Inbound"
+            access: "Allow"
+            protocol: "Tcp"
+            sourcePortRange: "*"
+            destinationPortRange: "80"
+            sourceAddressPrefix: "*"
+            destinationAddressPrefix: "*"
+    gcp:
+      enabled: true
+      security:
+        cloudArmor:
+          enabled: true
+          policyName: "todo-app-cloud-armor-policy"
+          rules:
+          - priority: "1000"
+            description: "allow from office IP"
+            match:
+              versionedExpr: "SRC_IPS_V1"
+              config:
+                srcIpRanges: ["192.168.1.0/24"]
+            action: "allow"
+          - priority: "2147483647"
+            description: "default rule"
+            match:
+              versionedExpr: "SRC_IPS_V1"
+              config:
+                srcIpRanges: ["*"]
+            action: "deny(403)"
+    oci:
+      enabled: true
+      security:
+        networkSecurityGroups:
+          enabled: true
+          rules:
+          - name: "AllowHTTP"
+            direction: "INGRESS"
+            protocol: "6"
+            source: "0.0.0.0/0"
+            sourceType: "CIDR_BLOCK"
+            isStateless: false
+            tcpOptions:
+              destinationPortRange:
+                min: 80
+                max: 80
+          - name: "AllowHTTPS"
+            direction: "INGRESS"
+            protocol: "6"
+            source: "0.0.0.0/0"
+            sourceType: "CIDR_BLOCK"
+            isStateless: false
+            tcpOptions:
+              destinationPortRange:
+                min: 443
+                max: 443

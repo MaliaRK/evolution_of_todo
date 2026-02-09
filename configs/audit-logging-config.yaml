@@ -1,0 +1,548 @@
+# Audit Logging Configuration
+# Configuration for audit logging of security-relevant events in the Todo AI system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-policy
+  namespace: kube-system
+data:
+  policy.yaml: |
+    apiVersion: audit.k8s.io/v1
+    kind: Policy
+    # Don't generate audit events for all requests in RequestReceived stage.
+    omitStages:
+      - "RequestReceived"
+    rules:
+      # Log pod changes at RequestResponse level
+      - level: RequestResponse
+        resources:
+        - group: ""
+          resources: ["pods"]
+      
+      # Log persistent volume changes at RequestResponse level
+      - level: RequestResponse
+        resources:
+        - group: ""
+          resources: ["persistentvolumes"]
+      
+      # Log secrets at the Metadata level
+      - level: Metadata
+        resources:
+        - group: ""
+          resources: ["secrets"]
+      
+      # Log configmaps at the Metadata level
+      - level: Metadata
+        resources:
+        - group: ""
+          resources: ["configmaps"]
+      
+      # Log all other resources at the Request level
+      - level: Request
+        resources:
+        - group: ""
+          resources: ["*"]
+        - group: "apps"
+          resources: ["*"]
+        - group: "rbac.authorization.k8s.io"
+          resources: ["*"]
+        - group: "networking.k8s.io"
+          resources: ["*"]
+        - group: "apiextensions.k8s.io"
+          resources: ["*"]
+        - group: "apiregistration.k8s.io"
+          resources: ["*"]
+        - group: "rbac.authorization.k8s.io"
+          resources: ["*"]
+        - group: "authentication.k8s.io"
+          resources: ["*"]
+        - group: "authorization.k8s.io"
+          resources: ["*"]
+        - group: "autoscaling"
+          resources: ["*"]
+        - group: "batch"
+          resources: ["*"]
+        - group: "certificates.k8s.io"
+          resources: ["*"]
+        - group: "events.k8s.io"
+          resources: ["*"]
+        - group: "extensions"
+          resources: ["*"]
+        - group: "policy"
+          resources: ["*"]
+        - group: "settings.k8s.io"
+          resources: ["*"]
+        - group: "storage.k8s.io"
+          resources: ["*"]
+      
+      # A catch-all rule to log all other requests at the Metadata level
+      - level: Metadata
+        omitStages:
+          - "RequestReceived"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-logger-sa
+  namespace: security
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: audit-logger-role
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["audit.k8s.io"]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: audit-logger-binding
+subjects:
+- kind: ServiceAccount
+  name: audit-logger-sa
+  namespace: security
+roleRef:
+  kind: ClusterRole
+  name: audit-logger-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: audit-logger
+  namespace: security
+spec:
+  selector:
+    matchLabels:
+      app: audit-logger
+  template:
+    metadata:
+      labels:
+        app: audit-logger
+    spec:
+      serviceAccountName: audit-logger-sa
+      hostNetwork: true
+      containers:
+      - name: fluent-bit
+        image: fluent/fluent-bit:latest
+        ports:
+        - containerPort: 2020
+        env:
+        - name: FLUENT_BIT_CONFIG
+          value: |
+            [SERVICE]
+                Flush         1
+                Daemon        Off
+                Log_Level     info
+                Parsers_File  parsers.conf
+                HTTP_Server   On
+                HTTP_Listen   0.0.0.0
+                HTTP_Port     2020
+            
+            [INPUT]
+                Name              tail
+                Path              /var/log/audit/audit.log
+                Parser            json
+                Tag               audit.k8s
+                Refresh_Interval  5
+                Skip_Long_Lines   On
+                DB                /var/log/flb_kube_audit.db
+                Mem_Buf_Limit     5MB
+                Buffer_Chunk_Size 1M
+                Buffer_Max_Size   5M
+            
+            [FILTER]
+                Name                modify
+                Match               audit.k8s
+                Add                 component k8s-audit
+                Add                 environment production
+            
+            [OUTPUT]
+                Name            es
+                Match           audit.k8s
+                Host            elasticsearch
+                Port            9200
+                Index           k8s-audit-${ENVIRONMENT}-${DATE:-%Y.%m.%d}
+                Logstash_Format On
+                Logstash_Prefix k8s-audit
+                Replace_Dots    On
+                Retry_Limit     False
+        volumeMounts:
+        - name: audit-log
+          mountPath: /var/log/audit
+        - name: config-volume
+          mountPath: /fluent-bit/etc/parsers.conf
+          subPath: parsers.conf
+      volumes:
+      - name: audit-log
+        hostPath:
+          path: /var/log/kube-audit
+          type: DirectoryOrCreate
+      - name: config-volume
+        configMap:
+          name: fluent-bit-parsers
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-parsers
+  namespace: security
+data:
+  parsers.conf: |
+    [PARSER]
+        Name        k8s-audit
+        Format      json
+        Time_Key    stageTimestamp
+        Time_Format %Y-%m-%dT%H:%M:%S.%LZ
+        Time_Keep   On
+        Decode_Field_As escaped_utf8 requestObject $.requestObject
+        Decode_Field_As escaped requestObject $.responseObject
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-event-processor
+  namespace: security
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security-event-processor
+  template:
+    metadata:
+      labels:
+        app: security-event-processor
+    spec:
+      serviceAccountName: audit-logger-sa
+      containers:
+      - name: processor
+        image: python:3.11-slim
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          pip install kafka-python requests && \
+          cat << 'EOF' > /app/processor.py
+          import json
+          import logging
+          from kafka import KafkaConsumer
+          import requests
+          
+          # Configure logging
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          def process_security_event(event):
+              """Process security-relevant events"""
+              try:
+                  # Extract relevant information
+                  user = event.get('user', {}).get('username', 'unknown')
+                  verb = event.get('verb', 'unknown')
+                  resource = event.get('objectRef', {}).get('resource', 'unknown')
+                  namespace = event.get('objectRef', {}).get('namespace', 'unknown')
+                  
+                  # Determine if this is a security-relevant event
+                  is_security_relevant = (
+                      verb in ['create', 'update', 'delete', 'patch'] and
+                      resource in ['secrets', 'configmaps', 'serviceaccounts', 'roles', 'rolebindings', 'clusterroles', 'clusterrolebindings']
+                  )
+                  
+                  if is_security_relevant:
+                      # Send to security monitoring system
+                      security_event = {
+                          'timestamp': event.get('stageTimestamp'),
+                          'user': user,
+                          'action': verb,
+                          'resource': resource,
+                          'namespace': namespace,
+                          'severity': 'medium' if resource in ['secrets', 'configmaps'] else 'high',
+                          'details': event
+                      }
+                      
+                      # Send to SIEM or security monitoring system
+                      try:
+                          response = requests.post(
+                              'http://security-monitoring:8080/api/events',
+                              json=security_event,
+                              timeout=10
+                          )
+                          logger.info(f"Security event sent: {response.status_code}")
+                      except Exception as e:
+                          logger.error(f"Failed to send security event: {e}")
+                          
+              except Exception as e:
+                  logger.error(f"Error processing event: {e}")
+          
+          if __name__ == "__main__":
+              # Connect to Kafka topic with audit logs
+              consumer = KafkaConsumer(
+                  'k8s-audit-logs',
+                  bootstrap_servers=['kafka:9092'],
+                  value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+              )
+              
+              logger.info("Starting security event processor...")
+              for message in consumer:
+                  try:
+                      event = message.value
+                      process_security_event(event)
+                  except Exception as e:
+                      logger.error(f"Error processing message: {e}")
+          EOF
+          
+          python /app/processor.py
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: SECURITY_MONITORING_URL
+          value: "http://security-monitoring:8080/api/events"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-event-processor-svc
+  namespace: security
+spec:
+  selector:
+    app: security-event-processor
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dapr-audit-logger
+  namespace: dapr-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dapr-audit-logger
+  template:
+    metadata:
+      labels:
+        app: dapr-audit-logger
+    spec:
+      serviceAccountName: audit-logger-sa
+      containers:
+      - name: dapr-audit-logger
+        image: python:3.11-slim
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          pip install flask requests && \
+          cat << 'EOF' > /app/dapr_audit.py
+          from flask import Flask, request, jsonify
+          import logging
+          import json
+          import requests
+          from datetime import datetime
+          
+          app = Flask(__name__)
+          logging.basicConfig(level=logging.INFO)
+          logger = logging.getLogger(__name__)
+          
+          @app.route('/dapr/webhook', methods=['POST'])
+          def dapr_webhook():
+              """Receive Dapr audit events"""
+              try:
+                  event_data = request.json
+                  timestamp = datetime.utcnow().isoformat()
+                  
+                  # Process Dapr security events
+                  audit_event = {
+                      'timestamp': timestamp,
+                      'source': 'dapr',
+                      'event_type': event_data.get('type', 'unknown'),
+                      'operation': event_data.get('operation', 'unknown'),
+                      'app_id': event_data.get('appId', 'unknown'),
+                      'namespace': event_data.get('namespace', 'unknown'),
+                      'details': event_data
+                  }
+                  
+                  # Log the event
+                  logger.info(f"Dapr audit event: {json.dumps(audit_event)}")
+                  
+                  # Forward to central audit system
+                  try:
+                      response = requests.post(
+                          'http://audit-logger:8080/api/audit',
+                          json=audit_event,
+                          timeout=5
+                      )
+                  except Exception as e:
+                      logger.error(f"Failed to forward audit event: {e}")
+                  
+                  return jsonify({'status': 'received'}), 200
+              except Exception as e:
+                  logger.error(f"Error processing Dapr audit: {e}")
+                  return jsonify({'error': str(e)}), 500
+          
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=8080)
+          EOF
+          
+          python /app/dapr_audit.py
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: application-audit-config
+  namespace: todo-app
+data:
+  audit-config.json: |
+    {
+      "audit": {
+        "enabled": true,
+        "level": "security-relevant",
+        "output": {
+          "type": "structured",
+          "format": "json",
+          "destination": "kafka",
+          "topic": "security-audit-logs"
+        },
+        "filters": {
+          "include": [
+            "authentication",
+            "authorization",
+            "secret_access",
+            "config_access",
+            "resource_modification"
+          ],
+          "exclude": [
+            "health_checks",
+            "metrics",
+            "read_operations"
+          ]
+        },
+        "fields": [
+          "timestamp",
+          "userId",
+          "sessionId",
+          "action",
+          "resource",
+          "result",
+          "sourceIp",
+          "userAgent",
+          "correlationId"
+        ],
+        "retention": "90d",
+        "encryption": true
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-audit-connector
+  namespace: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-audit-connector
+  template:
+    metadata:
+      labels:
+        app: kafka-audit-connector
+    spec:
+      serviceAccountName: audit-logger-sa
+      containers:
+      - name: kafka-audit-connector
+        image: confluentinc/cp-kafka-connect:latest
+        env:
+        - name: CONNECT_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: CONNECT_REST_ADVERTISED_HOST_NAME
+          value: kafka-audit-connector
+        - name: CONNECT_GROUP_ID
+          value: "audit-connect-group"
+        - name: CONNECT_CONFIG_STORAGE_TOPIC
+          value: "audit-connect-configs"
+        - name: CONNECT_OFFSET_STORAGE_TOPIC
+          value: "audit-connect-offsets"
+        - name: CONNECT_STATUS_STORAGE_TOPIC
+          value: "audit-connect-status"
+        - name: CONNECT_KEY_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_VALUE_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_INTERNAL_KEY_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_INTERNAL_VALUE_CONVERTER
+          value: "org.apache.kafka.connect.json.JsonConverter"
+        - name: CONNECT_REST_PORT
+          value: "8083"
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          # Wait for Kafka to be ready
+          until kafka-topics --bootstrap-server kafka:9092 --list; do
+            echo "Waiting for Kafka..."
+            sleep 2
+          done
+          
+          # Create audit topics
+          kafka-topics --create --topic security-audit-logs --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1
+          kafka-topics --create --topic k8s-audit-logs --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1
+          
+          # Start Kafka Connect
+          /etc/confluent/docker/run &
+          
+          # Wait for Connect to start
+          until curl -f http://localhost:8083/connectors; do
+            echo "Waiting for Kafka Connect to start..."
+            sleep 5
+          done
+          
+          # Configure connectors
+          cat << 'EOF' > /tmp/elasticsearch-sink.json
+          {
+            "name": "elasticsearch-audit-sink",
+            "config": {
+              "connector.class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+              "tasks.max": "1",
+              "topics": "security-audit-logs,k8s-audit-logs",
+              "connection.url": "http://elasticsearch:9200",
+              "type.name": "_doc",
+              "key.ignore": "true",
+              "schema.ignore": "true",
+              "transforms": "addTimestamp",
+              "transforms.addTimestamp.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+              "transforms.addTimestamp.timestamp.field": "audit_timestamp"
+            }
+          }
+          EOF
+          
+          curl -X POST -H "Content-Type: application/json" \
+            --data @/tmp/elasticsearch-sink.json \
+            http://localhost:8083/connectors
+          
+          wait
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-audit-connector-svc
+  namespace: kafka
+spec:
+  selector:
+    app: kafka-audit-connector
+  ports:
+    - protocol: TCP
+      port: 8083
+      targetPort: 8083

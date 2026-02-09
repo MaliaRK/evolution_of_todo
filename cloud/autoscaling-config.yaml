@@ -1,0 +1,611 @@
+# Auto-Scaling Policies for Cloud Environments
+# Configuration for auto-scaling specific to each cloud environment
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: azure-autoscaling-config
+  namespace: todo-app
+data:
+  # Azure auto-scaling configuration
+  azure-hpa-config.yaml: |
+    # Horizontal Pod Autoscaler for Azure
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: todo-app-azure-hpa
+      namespace: todo-app
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      minReplicas: 2
+      maxReplicas: 20
+      metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 70
+      - type: Resource
+        resource:
+          name: memory
+          target:
+            type: Utilization
+            averageUtilization: 80
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+          - type: Pods
+            value: 2
+            periodSeconds: 60
+          selectPolicy: Min
+        scaleUp:
+          stabilizationWindowSeconds: 60
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+          - type: Pods
+            value: 5
+            periodSeconds: 60
+          selectPolicy: Max
+  azure-vpa-config.yaml: |
+    # Vertical Pod Autoscaler for Azure
+    apiVersion: autoscaling.k8s.io/v1
+    kind: VerticalPodAutoscaler
+    metadata:
+      name: todo-app-azure-vpa
+      namespace: todo-app
+    spec:
+      targetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      updatePolicy:
+        updateMode: "Auto"
+      resourcePolicy:
+        containerPolicies:
+        - containerName: todo-app
+          maxAllowed:
+            cpu: 2000m
+            memory: 4Gi
+          minAllowed:
+            cpu: 100m
+            memory: 128Mi
+  azure-cluster-autoscaler-config.yaml: |
+    # Azure Cluster Autoscaler Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-autoscaler-azure-config
+      namespace: kube-system
+    data:
+      # Configuration for Azure Cluster Autoscaler
+      ClusterName: todo-app-aks-cluster
+      NodeResourceGroup: MC_todo-app-rg_todo-app-aks-cluster_eastus
+      ClientID: <azure-client-id>
+      ClientSecret: <azure-client-secret>
+      TenantID: <azure-tenant-id>
+      SubscriptionID: <azure-subscription-id>
+      VMType: "AKS"
+      Location: "eastus"
+      # Additional configuration options
+      ScaleDownEnabled: "true"
+      ScaleDownDelayAfterAdd: "10m"
+      ScaleDownDelayAfterDelete: "10s"
+      ScaleDownDelayAfterFailure: "3m"
+      ScaleDownUnneededTime: "10m"
+      ScaleDownUtilizationThreshold: "0.5"
+      MaxEmptyBulkDelete: "10"
+      MaxGracefulTerminationSec: "600"
+      MaxNodeProvisionTime: "15m"
+      MaxNodesTotal: "100"
+      MaxPodGracePeriod: "600"
+      NewPodScaleUpDelay: "0s"
+      OkTotalUnreadyCount: "3"
+      UnregisteredNodeRemovalTime: "10m"
+      Verbosity: "3"
+      WriteStatusConfigMap: "true"
+      BalanceSimilarNodeGroups: "false"
+      ExpendablePodsPriorityCutoff: "-10"
+      IgnoreDaemonsetsUtilization: "false"
+      IgnoreMirrorPods: "true"
+      MaxTotalUnreadyPercentage: "45"
+      MinRechargeDelay: "30s"
+      NodeGroupAutoDiscovery: "auto"
+      BalancingIgnoreLabel1: "some-label"
+      BalancingIgnoreLabel2: "some-other-label"
+      CloudProvider: "azure"
+      AzureClusterName: "todo-app-aks-cluster"
+      AzureResourceGroup: "todo-app-rg"
+      AzureVMType: "AKS"
+      AzureLocation: "eastus"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-autoscaling-config
+  namespace: todo-app
+data:
+  # Google Cloud auto-scaling configuration
+  gcp-hpa-config.yaml: |
+    # Horizontal Pod Autoscaler for GCP
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: todo-app-gcp-hpa
+      namespace: todo-app
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      minReplicas: 2
+      maxReplicas: 30
+      metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 65
+      - type: Resource
+        resource:
+          name: memory
+          target:
+            type: Utilization
+            averageUtilization: 75
+      - type: Pods
+        pods:
+          metric:
+            name: custom_metric_requests_per_second
+          target:
+            type: AverageValue
+            averageValue: "100"
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+          - type: Pods
+            value: 1
+            periodSeconds: 60
+          selectPolicy: Min
+        scaleUp:
+          stabilizationWindowSeconds: 60
+          policies:
+          - type: Percent
+            value: 30
+            periodSeconds: 60
+          - type: Pods
+            value: 3
+            periodSeconds: 60
+          selectPolicy: Max
+  gcp-vpa-config.yaml: |
+    # Vertical Pod Autoscaler for GCP
+    apiVersion: autoscaling.k8s.io/v1
+    kind: VerticalPodAutoscaler
+    metadata:
+      name: todo-app-gcp-vpa
+      namespace: todo-app
+    spec:
+      targetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      updatePolicy:
+        updateMode: "Auto"
+      resourcePolicy:
+        containerPolicies:
+        - containerName: todo-app
+          maxAllowed:
+            cpu: 2500m
+            memory: 5Gi
+          minAllowed:
+            cpu: 100m
+            memory: 128Mi
+  gcp-cluster-autoscaler-config.yaml: |
+    # Google Cloud Cluster Autoscaler Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-autoscaler-gcp-config
+      namespace: kube-system
+    data:
+      # Configuration for GCP Cluster Autoscaler
+      GKEClusterName: todo-app-gke-cluster
+      GKEZone: us-central1-a
+      GKEProject: todo-app-project
+      # Additional configuration options
+      ScaleDownEnabled: "true"
+      ScaleDownDelayAfterAdd: "10m"
+      ScaleDownDelayAfterDelete: "10s"
+      ScaleDownDelayAfterFailure: "3m"
+      ScaleDownUnneededTime: "10m"
+      ScaleDownUtilizationThreshold: "0.5"
+      MaxEmptyBulkDelete: "10"
+      MaxGracefulTerminationSec: "600"
+      MaxNodeProvisionTime: "15m"
+      MaxNodesTotal: "100"
+      MaxPodGracePeriod: "600"
+      NewPodScaleUpDelay: "0s"
+      OkTotalUnreadyCount: "3"
+      UnregisteredNodeRemovalTime: "10m"
+      Verbosity: "3"
+      WriteStatusConfigMap: "true"
+      BalanceSimilarNodeGroups: "false"
+      ExpendablePodsPriorityCutoff: "-10"
+      IgnoreDaemonsetsUtilization: "false"
+      IgnoreMirrorPods: "true"
+      MaxTotalUnreadyPercentage: "45"
+      MinRechargeDelay: "30s"
+      NodeGroupAutoDiscovery: "nodeGroupAutoDiscovery: daemonset"
+      BalancingIgnoreLabel1: "some-label"
+      BalancingIgnoreLabel2: "some-other-label"
+      CloudProvider: "gce"
+      GCEProject: "todo-app-project"
+      GCERegion: "us-central1"
+      GCEZone: "us-central1-a"
+      NodeName: "gce:todo-app-gke-cluster"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oci-autoscaling-config
+  namespace: todo-app
+data:
+  # Oracle Cloud auto-scaling configuration
+  oci-hpa-config.yaml: |
+    # Horizontal Pod Autoscaler for OCI
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: todo-app-oci-hpa
+      namespace: todo-app
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      minReplicas: 2
+      maxReplicas: 25
+      metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 75
+      - type: Resource
+        resource:
+          name: memory
+          target:
+            type: Utilization
+            averageUtilization: 85
+      - type: External
+        external:
+          metric:
+            name: oci_load_balancer_request_rate
+            selector:
+              matchLabels:
+                service: todo-app
+          target:
+            type: AverageValue
+            averageValue: "50"
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+          - type: Percent
+            value: 15
+            periodSeconds: 60
+          - type: Pods
+            value: 2
+            periodSeconds: 60
+          selectPolicy: Min
+        scaleUp:
+          stabilizationWindowSeconds: 90
+          policies:
+          - type: Percent
+            value: 40
+            periodSeconds: 60
+          - type: Pods
+            value: 4
+            periodSeconds: 60
+          selectPolicy: Max
+  oci-vpa-config.yaml: |
+    # Vertical Pod Autoscaler for OCI
+    apiVersion: autoscaling.k8s.io/v1
+    kind: VerticalPodAutoscaler
+    metadata:
+      name: todo-app-oci-vpa
+      namespace: todo-app
+    spec:
+      targetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      updatePolicy:
+        updateMode: "Auto"
+      resourcePolicy:
+        containerPolicies:
+        - containerName: todo-app
+          maxAllowed:
+            cpu: 2000m
+            memory: 4Gi
+          minAllowed:
+            cpu: 100m
+            memory: 128Mi
+  oci-cluster-autoscaler-config.yaml: |
+    # Oracle Cloud Infrastructure Cluster Autoscaler Configuration
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: cluster-autoscaler-oci-config
+      namespace: kube-system
+    data:
+      # Configuration for OCI Cluster Autoscaler
+      OCIClusterName: todo-app-oke-cluster
+      OCITenancyID: ocid1.tenancy.oc1..aaaaaaa...
+      OCIUserID: ocid1.user.oc1..aaaaaaa...
+      OCIRegion: us-phoenix-1
+      OCICompartmentID: ocid1.compartment.oc1..aaaaaaa...
+      OCIFingerprint: "aa:bb:cc:dd:ee:ff:gg:hh:ii:jj:kk:ll:mm:nn:oo:pp"
+      # Additional configuration options
+      ScaleDownEnabled: "true"
+      ScaleDownDelayAfterAdd: "10m"
+      ScaleDownDelayAfterDelete: "10s"
+      ScaleDownDelayAfterFailure: "3m"
+      ScaleDownUnneededTime: "10m"
+      ScaleDownUtilizationThreshold: "0.5"
+      MaxEmptyBulkDelete: "10"
+      MaxGracefulTerminationSec: "600"
+      MaxNodeProvisionTime: "15m"
+      MaxNodesTotal: "100"
+      MaxPodGracePeriod: "600"
+      NewPodScaleUpDelay: "0s"
+      OkTotalUnreadyCount: "3"
+      UnregisteredNodeRemovalTime: "10m"
+      Verbosity: "3"
+      WriteStatusConfigMap: "true"
+      BalanceSimilarNodeGroups: "false"
+      ExpendablePodsPriorityCutoff: "-10"
+      IgnoreDaemonsetsUtilization: "false"
+      IgnoreMirrorPods: "true"
+      MaxTotalUnreadyPercentage: "45"
+      MinRechargeDelay: "30s"
+      NodeGroupAutoDiscovery: "asgUrl"
+      BalancingIgnoreLabel1: "some-label"
+      BalancingIgnoreLabel2: "some-other-label"
+      CloudProvider: "oci"
+      OCIClusterID: ocid1.cluster.oc1.phx.aaaaaaa...
+      OCICompartmentID: ocid1.compartment.oc1..aaaaaaa...
+      OCIRegion: us-phoenix-1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multi-cloud-autoscaling-config
+  namespace: todo-app
+data:
+  # Multi-cloud auto-scaling configuration
+  multi-cloud-hpa-template.yaml: |
+    # Template for multi-cloud HPA configuration
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: todo-app-multi-cloud-hpa
+      namespace: todo-app
+      annotations:
+        # Cloud-specific annotations can be added as needed
+        # azure: service.beta.azure.com/scale-type: "VirtualMachineScaleSets"
+        # gcp: cloud.google.com/location-policy: "balanced"
+        # oci: oci.oraclecloud.com/flex-pool: "true"
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: todo-app
+      minReplicas: {{ .Values.autoscaling.minReplicas | default 2 }}
+      maxReplicas: {{ .Values.autoscaling.maxReplicas | default 20 }}
+      metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage | default 70 }}
+      - type: Resource
+        resource:
+          name: memory
+          target:
+            type: Utilization
+            averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage | default 80 }}
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDown.stabilizationWindowSeconds | default 300 }}
+          policies:
+          - type: Percent
+            value: {{ .Values.autoscaling.scaleDown.percentPolicyValue | default 10 }}
+            periodSeconds: {{ .Values.autoscaling.scaleDown.periodSeconds | default 60 }}
+          - type: Pods
+            value: {{ .Values.autoscaling.scaleDown.podsPolicyValue | default 2 }}
+            periodSeconds: {{ .Values.autoscaling.scaleDown.periodSeconds | default 60 }}
+          selectPolicy: Min
+        scaleUp:
+          stabilizationWindowSeconds: {{ .Values.autoscaling.scaleUp.stabilizationWindowSeconds | default 60 }}
+          policies:
+          - type: Percent
+            value: {{ .Values.autoscaling.scaleUp.percentPolicyValue | default 50 }}
+            periodSeconds: {{ .Values.autoscaling.scaleUp.periodSeconds | default 60 }}
+          - type: Pods
+            value: {{ .Values.autoscaling.scaleUp.podsPolicyValue | default 5 }}
+            periodSeconds: {{ .Values.autoscaling.scaleUp.periodSeconds | default 60 }}
+          selectPolicy: Max
+  multi-cloud-custom-metrics-config.yaml: |
+    # Configuration for custom metrics across cloud providers
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: custom-metrics-config
+      namespace: monitoring
+    data:
+      adapter-config.yaml: |
+        # Configuration for custom metrics adapter
+        rules:
+        - seriesQuery: 'up{job="todo-app"}'
+          resources:
+            overrides:
+              kubernetes_namespace: {resource: "namespace"}
+              kubernetes_pod_name: {resource: "pod"}
+          name:
+            matches: "up"
+            as: "todo_app_health"
+          metricsQuery: 'avg_over_time(up{job="todo-app"}[5m])'
+        - seriesQuery: 'http_requests_total{app="todo-app"}'
+          resources:
+            template: "namespace/{{.LabelMatchers.Get "__namespace__" }}"
+          name:
+            matches: "http_requests_total"
+            as: "todo_app_requests_per_second"
+          metricsQuery: 'round(avg(rate(http_requests_total{app="todo-app"}[2m])), 0.001)'
+        - seriesQuery: 'cloud_provider_load_balancer_request_count{service="todo-app"}'
+          resources:
+            overrides:
+              namespace: {resource: "namespace"}
+              service: {resource: "service"}
+              pod: {resource: "pod"}
+          name:
+            matches: "cloud_provider_load_balancer_request_count"
+            as: "todo_app_lb_requests_per_second"
+          metricsQuery: 'avg(rate(cloud_provider_load_balancer_request_count{service="todo-app"}[2m]))'
+      azure-custom-metrics.yaml: |
+        # Azure-specific custom metrics configuration
+        apiVersion: custom.metrics.k8s.io/v1beta1
+        kind: CustomMetric
+        metadata:
+          name: azure-load-balancer-requests-per-second
+          namespace: todo-app
+        spec:
+          metricName: azure_load_balancer_requests_per_second
+          selector:
+            matchLabels:
+              service: todo-app
+          metricLabels:
+            cloud_provider: azure
+            resource_group: todo-app-rg
+            cluster_name: todo-app-aks-cluster
+      gcp-custom-metrics.yaml: |
+        # GCP-specific custom metrics configuration
+        apiVersion: custom.metrics.k8s.io/v1beta1
+        kind: CustomMetric
+        metadata:
+          name: gcp-load-balancer-requests-per-second
+          namespace: todo-app
+        spec:
+          metricName: gcp_load_balancer_requests_per_second
+          selector:
+            matchLabels:
+              service: todo-app
+          metricLabels:
+            cloud_provider: gcp
+            project_id: todo-app-project
+            cluster_name: todo-app-gke-cluster
+      oci-custom-metrics.yaml: |
+        # OCI-specific custom metrics configuration
+        apiVersion: custom.metrics.k8s.io/v1beta1
+        kind: CustomMetric
+        metadata:
+          name: oci-load-balancer-requests-per-second
+          namespace: todo-app
+        spec:
+          metricName: oci_load_balancer_requests_per_second
+          selector:
+            matchLabels:
+              service: todo-app
+          metricLabels:
+            cloud_provider: oci
+            compartment_id: ocid1.compartment.oc1..aaaaaaa...
+            cluster_name: todo-app-oke-cluster
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: autoscaling-best-practices
+  namespace: todo-app
+data:
+  # Best practices for auto-scaling
+  autoscaling-best-practices.md: |
+    # Auto-Scaling Best Practices
+
+    ## General Best Practices
+
+    1. **Start Conservative**: Begin with conservative scaling thresholds and adjust based on observed usage patterns.
+
+    2. **Monitor Scaling Events**: Track scaling events to understand if your application is scaling appropriately.
+
+    3. **Consider Application Characteristics**: Stateless applications can scale more aggressively than stateful ones.
+
+    4. **Avoid Overlapping Metrics**: Don't use multiple metrics that measure the same thing (e.g., CPU and memory utilization for the same resource constraint).
+
+    5. **Set Appropriate Stabilization Windows**: Prevent thrashing by setting appropriate stabilization windows for scale-down operations.
+
+    ## Cloud Provider Specific Best Practices
+
+    ### Azure
+    - Use Virtual Machine Scale Sets for optimal scaling performance
+    - Consider Availability Zones for high availability
+    - Use Azure Advisor for scaling recommendations
+    - Monitor Azure-specific metrics like node pool capacity
+
+    ### Google Cloud
+    - Leverage preemptible instances for batch workloads
+    - Use node auto-provisioning for dynamic node scaling
+    - Monitor GKE-specific metrics like node pool utilization
+    - Consider using regional clusters for high availability
+
+    ### Oracle Cloud
+    - Use flexible compute shapes for cost optimization
+    - Monitor OKE-specific metrics like pod density
+    - Consider using spot instances for non-critical workloads
+    - Use OCI Metrics Explorer for scaling insights
+
+    ## Resource Sizing Guidelines
+
+    1. **CPU Requests**: Set CPU requests based on steady-state usage to ensure fair scheduling.
+
+    2. **Memory Requests**: Set memory requests based on actual usage to prevent OOM kills.
+
+    3. **CPU Limits**: Set CPU limits to prevent one pod from monopolizing CPU resources.
+
+    4. **Memory Limits**: Set memory limits to prevent memory leaks from consuming all available memory.
+
+    ## Scaling Triggers
+
+    1. **Resource-Based Scaling**: Use CPU and memory utilization as primary scaling triggers.
+
+    2. **Custom Metrics**: Use application-specific metrics like requests per second or queue depth.
+
+    3. **Scheduled Scaling**: Use CronJobs for predictable load patterns.
+
+    4. **External Metrics**: Use external metrics like load balancer request rates.
+
+    ## Troubleshooting Common Issues
+
+    1. **Scale-Up Delays**: Ensure sufficient quota and proper node pool configuration.
+
+    2. **Scale-Down Thrashing**: Adjust stabilization windows and utilization thresholds.
+
+    3. **Resource Starvation**: Monitor resource requests vs. actual usage.
+
+    4. **Pod Disruption Budgets**: Set appropriate PDBs to prevent scaling from impacting availability.

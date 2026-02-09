@@ -4,6 +4,9 @@ import { useNotification } from './Notification';
 const TaskForm = ({ onTaskCreated, taskToEdit, onEditComplete }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState('medium');
+  const [tags, setTags] = useState('');
   const [loading, setLoading] = useState(false);
   const { addNotification } = useNotification();
 
@@ -12,9 +15,15 @@ const TaskForm = ({ onTaskCreated, taskToEdit, onEditComplete }) => {
     if (taskToEdit) {
       setTitle(taskToEdit.title);
       setDescription(taskToEdit.description || '');
+      setDueDate(taskToEdit.due_date ? new Date(taskToEdit.due_date).toISOString().slice(0, 16) : '');
+      setPriority(taskToEdit.priority || 'medium');
+      setTags(taskToEdit.tags || '');
     } else {
       setTitle('');
       setDescription('');
+      setDueDate('');
+      setPriority('medium');
+      setTags('');
     }
   }, [taskToEdit]);
 
@@ -29,14 +38,25 @@ const TaskForm = ({ onTaskCreated, taskToEdit, onEditComplete }) => {
     setLoading(true);
 
     try {
+      const taskData = {
+        title: title.trim(),
+        description: description.trim(),
+        due_date: dueDate ? new Date(dueDate).toISOString() : null,
+        priority: priority,
+        tags: tags.trim()
+      };
+
       if (taskToEdit) {
         // Update existing task
-        onEditComplete({ ...taskToEdit, title: title.trim(), description: description.trim() });
+        onEditComplete({ ...taskToEdit, ...taskData });
       } else {
         // Create new task
-        onTaskCreated({ title: title.trim(), description: description.trim() });
+        onTaskCreated(taskData);
         setTitle('');
         setDescription('');
+        setDueDate('');
+        setPriority('medium');
+        setTags('');
       }
     } catch (err) {
       addNotification(err.message || 'An error occurred', 'error');
@@ -49,6 +69,9 @@ const TaskForm = ({ onTaskCreated, taskToEdit, onEditComplete }) => {
     onEditComplete(null);
     setTitle('');
     setDescription('');
+    setDueDate('');
+    setPriority('medium');
+    setTags('');
     addNotification('Edit cancelled', 'info');
   };
 
@@ -80,6 +103,45 @@ const TaskForm = ({ onTaskCreated, taskToEdit, onEditComplete }) => {
             placeholder="Enter task description (optional)"
             maxLength={10000}
             rows={3}
+            disabled={loading}
+          />
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label htmlFor="dueDate">Due Date</label>
+            <input
+              id="dueDate"
+              type="datetime-local"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="priority">Priority</label>
+            <select
+              id="priority"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              disabled={loading}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="tags">Tags (comma-separated)</label>
+          <input
+            id="tags"
+            type="text"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="work, personal, urgent"
             disabled={loading}
           />
         </div>

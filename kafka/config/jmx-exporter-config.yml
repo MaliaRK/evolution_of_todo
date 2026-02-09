@@ -1,0 +1,86 @@
+# JMX Exporter Configuration for Kafka
+# Exposes Kafka metrics in Prometheus format
+
+---
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+whitelistObjectNames:
+  - kafka.cluster:type=*, name=*
+  - kafka.log:type=*, name=*
+  - kafka.controller:type=*, name=*
+  - kafka.server:type=*, name=*, mbeanIdentifier=.*
+  - kafka.server:type=KafkaServer, name=*, mbeanIdentifier=.*
+  - kafka.server:type=BrokerTopicMetrics, name=*, mbeanIdentifier=.*
+  - kafka.network:type=*, name=*, mbeanIdentifier=.*
+  - kafka.coordinator.group:type=*, name=*
+  - kafka.consumer:type=*, name=*
+  - kafka.producer:type=*, name=*
+blacklistObjectNames:
+  - kafka.server:type=BrokerTopicMetrics, name=*
+rules:
+  - pattern: kafka.server<type=(\w+), name=(.+)PerSec, topic=(.+), partition=(.+)><>Count
+    name: kafka_server_$1_$2_total
+    labels:
+      topic: "$3"
+      partition: "$4"
+  - pattern: kafka.server<type=(\w+), name=(.+)PerSec, topic=(.+)><>Count
+    name: kafka_server_$1_$2_total
+    labels:
+      topic: "$3"
+  - pattern: kafka.server<type=(\w+), name=(.+)PerSec><>Count
+    name: kafka_server_$1_$2_total
+  - pattern: kafka.server<type=(\w+), name=(.+), topic=(.+), partition=(.*)><>(Value)
+    name: kafka_server_$1_$2
+    labels:
+      topic: "$3"
+      partition: "$4"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), clientId=(.+), topic=(.+), partition=(.*)><>(Value)
+    name: kafka_$1_$2_$3
+    labels:
+      clientId: "$4"
+      topic: "$5"
+      partition: "$6"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), clientId=(.+), topic=(.*)><>(Value)
+    name: kafka_$1_$2_$3
+    labels:
+      clientId: "$4"
+      topic: "$5"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), clientId=(.*)><>(Value)
+    name: kafka_$1_$2_$3
+    labels:
+      clientId: "$4"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+)><>(Value)
+    name: kafka_$1_$2_$3
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), topic=(.+), partition=(.*)><>(Count|Value)
+    name: kafka_$1_$2_$3
+    labels:
+      topic: "$4"
+      partition: "$5"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), topic=(.*)><>(Count|Value)
+    name: kafka_$1_$2_$3
+    labels:
+      topic: "$4"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+)><>(Count|Value)
+    name: kafka_$1_$2_$3
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attributeName=(.+)PerSec, topic=(.+), partition=(.*)><>(Count)
+    name: kafka_$1_$2_$4_total
+    labels:
+      topic: "$5"
+      partition: "$6"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attributeName=(.+)PerSec, topic=(.*)><>(Count)
+    name: kafka_$1_$2_$4_total
+    labels:
+      topic: "$5"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attributeName=(.+)PerSec><>(Count)
+    name: kafka_$1_$2_$4_total
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attribute=(.+)PerSec, topic=(.+), partition=(.*)><>(Count)
+    name: kafka_$1_$2_$4_total
+    labels:
+      topic: "$5"
+      partition: "$6"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attribute=(.+)PerSec, topic=(.*)><>(Count)
+    name: kafka_$1_$2_$4_total
+    labels:
+      topic: "$5"
+  - pattern: kafka.(\w+)<type=(\w+), name=(.+), attribute=(.+)PerSec><>(Count)
+    name: kafka_$1_$2_$4_total
